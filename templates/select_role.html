@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}Select Role - Project Manager AI{% endblock %}
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card" style="max-width: 500px;">
+        <div class="auth-header">
+            <h2>Select Dashboard Role</h2>
+            <p>Choose which role dashboard you want to access</p>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="role">Select Role</label>
+                <select name="role" id="role" class="form-group input" required>
+                    {% for value, label in roles %}
+                        {% if value == 'project_manager' or value == 'recruitment_agent' %}
+                            <option value="{{ value }}" {% if current_role == value or not current_role and value == 'project_manager' %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <span class="helptext">Choose the role dashboard you want to view. You can switch roles anytime from the navigation.</span>
+            </div>
+            <button type="submit" class="btn btn-primary">Open Dashboard</button>
+        </form>
+        <div style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--border-color);">
+            <p style="color: var(--text-secondary); font-size: 0.9rem; text-align: center;">
+                <strong>Admin User:</strong> You can switch between different role dashboards to test functionality for each user type.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

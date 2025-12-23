@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}My Projects - Project Manager AI{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 1200px; margin: 2rem auto; padding: 2rem;">
+    <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2>My Projects</h2>
+            <p>Manage all your projects in one place</p>
+        </div>
+        <a href="{% url 'project_create' %}" class="btn btn-primary" style="text-decoration: none;">
+            + Create New Project
+        </a>
+    </div>
+    
+    {% if projects %}
+    <div class="dashboard-grid">
+        {% for project in projects %}
+        <div class="dashboard-card">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                <h3 style="margin: 0;">{{ project.name }}</h3>
+                <span style="padding: 0.25rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.85rem; 
+                    background: {% if project.status == 'active' %}var(--success-color){% elif project.status == 'completed' %}var(--primary-color){% else %}var(--text-light){% endif %};
+                    color: white;">
+                    {{ project.get_status_display }}
+                </span>
+            </div>
+            
+            <p style="color: var(--text-secondary); margin-bottom: 1rem; min-height: 3rem;">
+                {{ project.description|truncatewords:20|default:"No description" }}
+            </p>
+            
+            <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+                <a href="{% url 'project_detail' project.id %}" class="btn btn-primary" 
+                   style="text-decoration: none; padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    View Details
+                </a>
+                <a href="{% url 'project_edit' project.id %}" class="btn btn-secondary" 
+                   style="text-decoration: none; padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    Edit
+                </a>
+            </div>
+            
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); 
+                display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-secondary);">
+                <span>Priority: <strong>{{ project.get_priority_display }}</strong></span>
+                <span>{{ project.tasks.count }} tasks</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon" style="font-size: 3rem; color: var(--primary-color); font-weight: 300;">PROJECTS</div>
+        <h3>No projects yet</h3>
+        <p>Create your first project to get started!</p>
+        <a href="{% url 'project_create' %}" class="btn btn-primary" style="text-decoration: none; margin-top: 1rem;">
+            Create Your First Project
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+

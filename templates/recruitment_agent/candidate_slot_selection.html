@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Interview Time Slot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+        .interview-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .interview-info h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .info-item {
+            margin-bottom: 10px;
+            color: #555;
+        }
+        .info-item strong {
+            color: #333;
+            display: inline-block;
+            width: 140px;
+        }
+        .slots-container {
+            margin-bottom: 30px;
+        }
+        .slots-container h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        .slot-option {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .slot-option:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        .slot-option input[type="radio"] {
+            margin-right: 15px;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+        .slot-option label {
+            cursor: pointer;
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+        .slot-option input[type="radio"]:checked + label {
+            color: #667eea;
+            font-weight: 600;
+        }
+        .slot-option input[type="radio"]:checked {
+            accent-color: #667eea;
+        }
+        .submit-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c33;
+        }
+        .success-message {
+            background: #efe;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3c3;
+        }
+        .invalid-token {
+            text-align: center;
+            padding: 40px;
+        }
+        .invalid-token h2 {
+            color: #c33;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if invalid_token %}
+        <div class="invalid-token">
+            <h2>❌ Invalid Link</h2>
+            <p>{{ error }}</p>
+        </div>
+        {% else %}
+        <div class="header">
+            <h1>📅 Select Your Interview Time</h1>
+            <p>Please choose the time slot that works best for you</p>
+        </div>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="{% if message.tags == 'error' %}error-message{% else %}success-message{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="interview-info">
+            <h2>Interview Details</h2>
+            <div class="info-item"><strong>Position:</strong> {{ interview.job_role }}</div>
+            <div class="info-item"><strong>Candidate:</strong> {{ interview.candidate_name }}</div>
+            <div class="info-item"><strong>Type:</strong> {{ interview.get_interview_type_display }}</div>
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+            <div class="slots-container">
+                <h3>Available Time Slots:</h3>
+                {% for slot in available_slots %}
+                <div class="slot-option">
+                    <input type="radio" id="slot_{{ forloop.counter }}" name="selected_slot" value="{{ slot.datetime }}" required>
+                    <label for="slot_{{ forloop.counter }}">{{ slot.display }}</label>
+                </div>
+                {% endfor %}
+            </div>
+
+            <button type="submit" class="submit-btn">✅ Confirm This Time Slot</button>
+        </form>
+        {% endif %}
+    </div>
+</body>
+</html>
+

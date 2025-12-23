@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard - Project Manager AI{% endblock %}
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2>Welcome back, {{ user.username }}</h2>
+            <p>Here's an overview of your projects and tasks
+                {% if user.is_superuser or user.is_staff %}
+                    {% if selected_role %}
+                        {% if selected_role == 'project_manager' %}
+                        <span style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; padding: 0.25rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; margin-left: 0.5rem; font-weight: 600;">
+                            Project Manager (Admin View)
+                        </span>
+                        {% elif selected_role == 'team_member' %}
+                        <span style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; padding: 0.25rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; margin-left: 0.5rem; font-weight: 600;">
+                            Team Member (Admin View)
+                        </span>
+                        {% else %}
+                        <span style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; padding: 0.25rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; margin-left: 0.5rem; font-weight: 600;">
+                            Viewer (Admin View)
+                        </span>
+                        {% endif %}
+                    {% endif %}
+                {% elif user.profile and user.profile.role == 'project_manager' %}
+                    <span style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; padding: 0.25rem 0.75rem; border-radius: var(--radius-md); font-size: 0.85rem; margin-left: 0.5rem; font-weight: 600;">
+                        Project Manager
+                    </span>
+                {% endif %}
+            </p>
+        </div>
+        <a href="{% url 'project_create' %}" class="btn btn-primary" style="text-decoration: none;">
+            + Create Project
+        </a>
+    </div>
+    
+    <div class="dashboard-grid">
+        <div class="dashboard-card">
+            <div class="icon" style="font-size: 2.5rem; color: var(--primary-color); margin-bottom: 1rem; font-weight: 300;">PROJECTS</div>
+            <h3>My Projects</h3>
+            <p>Manage and organize all your projects in one place. Create new projects, track progress, and collaborate with your team.</p>
+        </div>
+        
+        <div class="dashboard-card">
+            <div class="icon" style="font-size: 2.5rem; color: var(--success-color); margin-bottom: 1rem; font-weight: 300;">TASKS</div>
+            <h3>Tasks</h3>
+            <p>Stay on top of your tasks and deadlines. Create, assign, and track tasks across all your projects.</p>
+        </div>
+        
+        <div class="dashboard-card">
+            <div class="icon" style="font-size: 2.5rem; color: var(--secondary-color); margin-bottom: 1rem; font-weight: 300;">ANALYTICS</div>
+            <h3>Analytics</h3>
+            <p>Get insights into your productivity and project performance with detailed analytics and reports.</p>
+        </div>
+    </div>
+    
+    {% if projects %}
+    <div class="dashboard-grid" style="margin-top: 2rem;">
+        {% for project in projects|slice:":3" %}
+        <div class="dashboard-card">
+            <h3>{{ project.name }}</h3>
+            <p style="color: var(--text-secondary);">{{ project.description|truncatewords:15|default:"No description" }}</p>
+            <div style="margin-top: 1rem;">
+                <a href="{% url 'project_detail' project.id %}" class="btn btn-primary" 
+                   style="text-decoration: none; padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    View Project →
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon" style="font-size: 3rem; color: var(--primary-color); font-weight: 300;">START</div>
+        <h3>Ready to get started?</h3>
+        <p>Your projects will appear here once you create them. Start by creating your first project!</p>
+        <a href="{% url 'project_create' %}" class="btn btn-primary" style="text-decoration: none; margin-top: 1rem;">
+            Create Your First Project
+        </a>
+    </div>
+    {% endif %}
+    
+    {% if projects|length > 3 %}
+    <div style="text-align: center; margin-top: 2rem;">
+        <a href="{% url 'project_list' %}" class="btn btn-secondary" style="text-decoration: none;">
+            View All Projects ({{ projects.count }})
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- AI Agents Link - Only for Project Managers -->
+    {% if user.is_superuser or user.is_staff %}
+        {% if selected_role == 'project_manager' %}
+        <div style="margin-top: 2rem; text-align: center;">
+            <div class="dashboard-card" style="background: var(--bg-primary); border: 2px solid var(--primary-color);">
+                <h3 style="color: var(--text-primary); margin-bottom: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                    <span style="color: var(--primary-color);">AI</span> Project Manager Dashboard
+                </h3>
+                <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                    Access powerful AI agents to help manage your projects, prioritize tasks, and get intelligent insights.
+                </p>
+                <a href="{% url 'ai_agents_test' %}" class="btn btn-primary" style="text-decoration: none; display: inline-block; font-weight: 600; width: auto; padding: 0.75rem 2rem;">
+                    Open AI Dashboard →
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    {% elif user.profile and user.profile.role == 'project_manager' %}
+    <div style="margin-top: 2rem; text-align: center;">
+        <div class="dashboard-card" style="background: var(--bg-primary); border: 2px solid var(--primary-color);">
+            <h3 style="color: var(--text-primary); margin-bottom: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <span style="color: var(--primary-color);">AI</span> Project Manager Dashboard
+            </h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                Access powerful AI agents to help manage your projects, prioritize tasks, and get intelligent insights.
+            </p>
+            <a href="{% url 'ai_agents_test' %}" class="btn btn-primary" style="text-decoration: none; display: inline-block; font-weight: 600; width: auto; padding: 0.75rem 2rem;">
+                Open AI Dashboard →
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

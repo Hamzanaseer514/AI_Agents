@@ -1,0 +1,914 @@
+"""
+Interview Scheduling Agent for AI-based recruitment system.
+
+This agent handles interview coordination and communication after a candidate
+has been approved for interview by the screening and scoring system.
+"""
+
+import json
+import re
+import secrets
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.core.mail.message import sanitize_address
+from django.conf import settings
+from django.template.loader import render_to_string
+
+from recruitment_agent.log_service import LogService
+from recruitment_agent.models import Interview
+
+
+class InterviewSchedulingAgent:
+    """
+    Interview Scheduling Agent responsible for:
+    - Generating available interview time slots
+    - Sending interview invitation emails
+    - Handling candidate slot selection
+    - Sending confirmation and reminder emails
+    """
+
+    def __init__(
+        self,
+        log_service: Optional[LogService] = None,
+    ) -> None:
+        self.log_service = log_service or LogService()
+        # Default recruiter availability (can be customized)
+        self.default_working_hours = {
+            'start': 9,  # 9 AM
+            'end': 17,   # 5 PM
+        }
+        self.default_slot_duration = 60  # 60 minutes per interview
+
+    def schedule_interview(
+        self,
+        candidate_name: str,
+        candidate_email: str,
+        job_role: str,
+        interview_type: str = 'ONLINE',
+        candidate_phone: Optional[str] = None,
+        cv_record_id: Optional[int] = None,
+        recruiter_id: Optional[int] = None,
+        custom_slots: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Main method to schedule an interview for an approved candidate.
+        
+        Args:
+            candidate_name: Name of the candidate
+            candidate_email: Email address of the candidate
+            job_role: Job role/position
+            interview_type: 'ONLINE' or 'ONSITE'
+            candidate_phone: Optional phone number
+            cv_record_id: Optional ID of related CV record
+            recruiter_id: Optional ID of recruiter user
+            custom_slots: Optional custom time slots (list of dicts with 'datetime' and 'display')
+        
+        Returns:
+            Dict with interview details and status
+        """
+        self._log_step("interview_scheduling_start", {
+            "candidate_name": candidate_name,
+            "candidate_email": candidate_email,
+            "job_role": job_role,
+            "interview_type": interview_type,
+        })
+
+        # Generate available time slots
+        if custom_slots:
+            available_slots = custom_slots
+        else:
+            available_slots = self.generate_available_slots()
+
+        # Generate unique secure token for candidate slot selection
+        confirmation_token = secrets.token_urlsafe(32)
+        
+        # Create interview record
+        interview = Interview.objects.create(
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            candidate_phone=candidate_phone,
+            job_role=job_role,
+            interview_type=interview_type,
+            status='PENDING',
+            available_slots_json=json.dumps(available_slots, default=str),
+            cv_record_id=cv_record_id,
+            recruiter_id=recruiter_id,
+            confirmation_token=confirmation_token,
+            invitation_sent_at=timezone.now(),
+        )
+
+        # Send invitation email
+        email_sent = self.send_invitation_email(interview, available_slots)
+
+        if not email_sent:
+            self._log_error("invitation_email_failed", {
+                "interview_id": interview.id,
+                "candidate_email": candidate_email,
+            })
+
+        result = {
+            "interview_id": interview.id,
+            "status": interview.status,
+            "available_slots": available_slots,
+            "invitation_sent": email_sent,
+            "message": "Interview invitation sent successfully" if email_sent else "Interview created but email failed",
+        }
+
+        self._log_step("interview_scheduling_complete", {
+            "interview_id": interview.id,
+            "status": interview.status,
+        })
+
+        return result
+
+    def generate_available_slots(
+        self,
+        days_ahead: int = 14,
+        slots_per_day: int = 3,
+        start_hour: Optional[int] = None,
+        end_hour: Optional[int] = None,
+    ) -> List[Dict[str, str]]:
+        """
+        Generate a list of available interview time slots.
+        
+        Args:
+            days_ahead: Number of days ahead to generate slots (default: 14)
+            slots_per_day: Number of slots per day (default: 3)
+            start_hour: Start hour (default: from default_working_hours)
+            end_hour: End hour (default: from default_working_hours)
+        
+        Returns:
+            List of dicts with 'datetime' (ISO format) and 'display' (human-readable)
+        """
+        start_hour = start_hour or self.default_working_hours['start']
+        end_hour = end_hour or self.default_working_hours['end']
+        
+        slots = []
+        now = timezone.now()
+        
+        # Generate slots for the next N days (excluding weekends by default)
+        current_date = now.date()
+        days_generated = 0
+        day_offset = 1  # Start from tomorrow
+        
+        while days_generated < days_ahead and len(slots) < (days_ahead * slots_per_day):
+            target_date = current_date + timedelta(days=day_offset)
+            day_of_week = target_date.weekday()  # 0 = Monday, 6 = Sunday
+            
+            # Skip weekends (optional - can be made configurable)
+            if day_of_week < 5:  # Monday to Friday
+                # Generate slots for this day
+                hours_between = end_hour - start_hour
+                slot_interval = hours_between / (slots_per_day + 1)
+                
+                for i in range(slots_per_day):
+                    slot_hour = start_hour + (i + 1) * slot_interval
+                    slot_datetime = timezone.make_aware(
+                        datetime.combine(target_date, datetime.min.time().replace(hour=int(slot_hour), minute=0))
+                    )
+                    
+                    # Only add future slots
+                    if slot_datetime > now:
+                        slots.append({
+                            'datetime': slot_datetime.isoformat(),
+                            'display': slot_datetime.strftime('%A, %B %d, %Y at %I:%M %p'),
+                        })
+                        days_generated += 1
+                        
+                        if len(slots) >= (days_ahead * slots_per_day):
+                            break
+            
+            day_offset += 1
+        
+        # Return 2-3 slots as per requirements
+        return slots[:3]
+
+    def send_invitation_email(
+        self,
+        interview: Interview,
+        available_slots: List[Dict[str, str]],
+    ) -> bool:
+        """
+        Send interview invitation email to candidate.
+        
+        Args:
+            interview: Interview instance
+            available_slots: List of available time slots
+        
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        print("\n" + "="*60)
+        print("📧 SENDING INTERVIEW INVITATION EMAIL")
+        print("="*60)
+        try:
+            # Clean job role for email subject (remove newlines, extra spaces, limit length)
+            clean_job_role = self._clean_email_header(str(interview.job_role))
+            # Limit subject length (email subjects should be max 78 chars recommended)
+            if len(clean_job_role) > 50:
+                clean_job_role = clean_job_role[:47] + "..."
+            
+            subject = f"Interview Invitation - {clean_job_role}"
+            
+            # Generate slot selection URL with token
+            from django.urls import reverse
+            try:
+                # Get the domain from request or settings
+                domain = getattr(settings, 'SITE_DOMAIN', 'http://127.0.0.1:8000')
+                if not domain.startswith('http'):
+                    domain = f'http://{domain}'
+                slot_selection_url = f"{domain}/recruitment/interview/select/{interview.confirmation_token}/"
+            except:
+                slot_selection_url = f"http://127.0.0.1:8000/recruitment/interview/select/{interview.confirmation_token}/"
+            
+            # Prepare email context
+            context = {
+                'candidate_name': interview.candidate_name,
+                'job_role': interview.job_role,
+                'interview_type': interview.interview_type,
+                'available_slots': available_slots,
+                'interview_id': interview.id,
+                'slot_selection_url': slot_selection_url,
+            }
+            
+            print(f"✓ Interview ID: {interview.id}")
+            print(f"✓ Candidate: {interview.candidate_name}")
+            print(f"✓ Email: {interview.candidate_email}")
+            print(f"✓ Job Role: {interview.job_role}")
+            print(f"✓ Interview Type: {interview.interview_type}")
+            
+            # Render email template
+            print("\n📝 Rendering email templates...")
+            try:
+                message = render_to_string('recruitment_agent/emails/interview_invitation.txt', context)
+                html_message = render_to_string('recruitment_agent/emails/interview_invitation.html', context)
+                print("✓ Templates rendered successfully")
+            except Exception as template_error:
+                print(f"❌ ERROR: Template rendering failed: {template_error}")
+                raise
+            
+            # Get from email and clean all email addresses
+            from_email_raw = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+            from_email = self._clean_email_header(from_email_raw)
+            to_email = self._clean_email_header(interview.candidate_email)
+            email_backend = getattr(settings, 'EMAIL_BACKEND', 'Not configured')
+            
+            print(f"\n📤 Email Configuration:")
+            print(f"  Backend: {email_backend}")
+            print(f"  From: {from_email}")
+            print(f"  To: {to_email}")
+            print(f"  Subject: {subject}")
+            
+            self._log_step("sending_invitation_email", {
+                "interview_id": interview.id,
+                "to": interview.candidate_email,
+                "from": from_email,
+                "subject": subject,
+                "backend": email_backend,
+            })
+            
+            # Send email
+            print("\n🚀 Attempting to send email...")
+            try:
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[to_email],
+                    html_message=html_message,
+                    fail_silently=False,  # Raise exception on error
+                )
+                print("✅ Email sent successfully!")
+            except Exception as send_error:
+                print(f"❌ ERROR: Email sending failed: {send_error}")
+                print(f"   Error Type: {type(send_error).__name__}")
+                raise
+            
+            # Update interview record
+            interview.invitation_sent_at = timezone.now()
+            interview.save(update_fields=['invitation_sent_at'])
+            
+            print(f"✓ Timestamp updated: {interview.invitation_sent_at}")
+            print("="*60 + "\n")
+            
+            self._log_step("invitation_email_sent", {
+                "interview_id": interview.id,
+                "candidate_email": interview.candidate_email,
+                "sent_at": interview.invitation_sent_at.isoformat(),
+            })
+            
+            return True
+            
+        except Exception as exc:
+            import traceback
+            print(f"\n❌ EXCEPTION OCCURRED:")
+            print(f"   Error: {str(exc)}")
+            print(f"   Type: {type(exc).__name__}")
+            print(f"\n📋 Full Traceback:")
+            print(traceback.format_exc())
+            print("="*60 + "\n")
+            
+            error_details = {
+                "interview_id": interview.id,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "traceback": traceback.format_exc(),
+            }
+            self._log_error("invitation_email_error", error_details)
+            # Still update timestamp to track attempt
+            try:
+                interview.invitation_sent_at = timezone.now()
+                interview.save(update_fields=['invitation_sent_at'])
+            except:
+                pass
+            return False
+
+    def confirm_slot(
+        self,
+        interview_id: int,
+        selected_slot_datetime: str,
+    ) -> Dict[str, Any]:
+        """
+        Confirm a selected interview slot.
+        
+        Args:
+            interview_id: ID of the interview
+            selected_slot_datetime: ISO format datetime string of selected slot
+        
+        Returns:
+            Dict with confirmation details
+        """
+        try:
+            interview = Interview.objects.get(id=interview_id)
+            
+            # Parse and validate the selected slot
+            try:
+                # Handle ISO format with or without timezone
+                if selected_slot_datetime.endswith('Z'):
+                    selected_slot_datetime = selected_slot_datetime[:-1] + '+00:00'
+                selected_datetime = datetime.fromisoformat(selected_slot_datetime)
+                if timezone.is_naive(selected_datetime):
+                    selected_datetime = timezone.make_aware(selected_datetime)
+            except (ValueError, AttributeError) as e:
+                return {
+                    "success": False,
+                    "error": f"Invalid datetime format: {str(e)}",
+                }
+            
+            # Validate slot is in available slots
+            available_slots = json.loads(interview.available_slots_json)
+            slot_found = False
+            selected_slot_display = None
+            
+            for slot in available_slots:
+                slot_dt = datetime.fromisoformat(slot['datetime'].replace('Z', '+00:00'))
+                if timezone.is_naive(slot_dt):
+                    slot_dt = timezone.make_aware(slot_dt)
+                
+                if abs((slot_dt - selected_datetime).total_seconds()) < 60:  # Within 1 minute
+                    slot_found = True
+                    selected_slot_display = slot.get('display', slot['datetime'])
+                    break
+            
+            if not slot_found:
+                return {
+                    "success": False,
+                    "error": "Selected slot is not in the available slots list",
+                }
+            
+            # Update interview
+            interview.status = 'SCHEDULED'
+            interview.scheduled_datetime = selected_datetime
+            interview.selected_slot = selected_slot_display
+            interview.save()
+            
+            # Send confirmation email
+            confirmation_sent = self.send_confirmation_email(interview)
+            
+            result = {
+                "success": True,
+                "interview_id": interview.id,
+                "status": interview.status,
+                "scheduled_datetime": interview.scheduled_datetime.isoformat(),
+                "confirmation_sent": confirmation_sent,
+            }
+            
+            self._log_step("slot_confirmed", {
+                "interview_id": interview.id,
+                "scheduled_datetime": interview.scheduled_datetime.isoformat(),
+            })
+            
+            return result
+            
+        except Interview.DoesNotExist:
+            return {
+                "success": False,
+                "error": "Interview not found",
+            }
+        except Exception as exc:
+            self._log_error("slot_confirmation_error", {
+                "interview_id": interview_id,
+                "error": str(exc),
+            })
+            return {
+                "success": False,
+                "error": str(exc),
+            }
+
+    def send_confirmation_email(self, interview: Interview) -> bool:
+        """
+        Send confirmation email to candidate and recruiter.
+        
+        Args:
+            interview: Interview instance
+        
+        Returns:
+            True if emails sent successfully, False otherwise
+        """
+        print("\n" + "="*60)
+        print("📧 SENDING INTERVIEW CONFIRMATION EMAILS")
+        print("="*60)
+        try:
+            from_email_raw = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+            from_email = self._clean_email_header(from_email_raw)
+            email_backend = getattr(settings, 'EMAIL_BACKEND', 'Not configured')
+            
+            # Clean job role for email subject
+            clean_job_role = self._clean_email_header(str(interview.job_role))
+            if len(clean_job_role) > 50:
+                clean_job_role = clean_job_role[:47] + "..."
+            
+            subject = f"Interview Confirmed - {clean_job_role}"
+            
+            print(f"✓ Interview ID: {interview.id}")
+            print(f"✓ Candidate: {interview.candidate_name} ({interview.candidate_email})")
+            print(f"✓ Scheduled: {interview.scheduled_datetime}")
+            print(f"✓ Email Backend: {email_backend}")
+            
+            # Candidate confirmation
+            print("\n📝 Preparing candidate confirmation email...")
+            candidate_context = {
+                'candidate_name': interview.candidate_name,
+                'job_role': interview.job_role,
+                'interview_type': interview.interview_type,
+                'scheduled_datetime': interview.scheduled_datetime,
+                'selected_slot': interview.selected_slot,
+            }
+            
+            try:
+                candidate_message = render_to_string('recruitment_agent/emails/interview_confirmation.txt', candidate_context)
+                candidate_html = render_to_string('recruitment_agent/emails/interview_confirmation.html', candidate_context)
+                print("✓ Candidate email templates rendered")
+            except Exception as template_error:
+                print(f"❌ ERROR: Candidate template rendering failed: {template_error}")
+                raise
+            
+            to_email = self._clean_email_header(interview.candidate_email)
+            
+            self._log_step("sending_confirmation_email_candidate", {
+                "interview_id": interview.id,
+                "to": to_email,
+            })
+            
+            print(f"\n🚀 Sending to candidate: {to_email}")
+            try:
+                send_mail(
+                    subject=subject,
+                    message=candidate_message,
+                    from_email=from_email,
+                    recipient_list=[to_email],
+                    html_message=candidate_html,
+                    fail_silently=False,
+                )
+                print("✅ Candidate email sent successfully!")
+            except Exception as send_error:
+                print(f"❌ ERROR: Candidate email failed: {send_error}")
+                raise
+            
+            # Recruiter notification (if recruiter email available)
+            recruiter_email_sent = False
+            
+            # Get recruiter email: try user email first, then env variable
+            recruiter_email = None
+            recruiter_name = "Recruiter"
+            
+            if interview.recruiter and interview.recruiter.email:
+                recruiter_email = interview.recruiter.email
+                recruiter_name = interview.recruiter.get_full_name() or interview.recruiter.username
+            else:
+                # Fallback to environment variable
+                recruiter_email = getattr(settings, 'RECRUITER_EMAIL', '')
+                if recruiter_email:
+                    if interview.recruiter:
+                        recruiter_name = interview.recruiter.get_full_name() or interview.recruiter.username
+                    else:
+                        recruiter_name = "Recruiter"
+                    print(f"✓ Using recruiter email from environment variable")
+            
+            if recruiter_email:
+                print(f"\n📝 Preparing recruiter notification email...")
+                recruiter_context = {
+                    'recruiter_name': recruiter_name,
+                    'candidate_name': interview.candidate_name,
+                    'candidate_email': interview.candidate_email,
+                    'job_role': interview.job_role,
+                    'interview_type': interview.interview_type,
+                    'scheduled_datetime': interview.scheduled_datetime,
+                }
+                
+                # Clean job role for recruiter subject
+                clean_job_role = self._clean_email_header(str(interview.job_role))
+                if len(clean_job_role) > 40:
+                    clean_job_role = clean_job_role[:37] + "..."
+                recruiter_subject = f"Interview Scheduled - {interview.candidate_name} for {clean_job_role}"
+                
+                try:
+                    recruiter_message = render_to_string('recruitment_agent/emails/interview_confirmation_recruiter.txt', recruiter_context)
+                    recruiter_html = render_to_string('recruitment_agent/emails/interview_confirmation_recruiter.html', recruiter_context)
+                    print("✓ Recruiter email templates rendered")
+                except Exception as template_error:
+                    print(f"❌ ERROR: Recruiter template rendering failed: {template_error}")
+                    raise
+                
+                recruiter_email_clean = self._clean_email_header(recruiter_email)
+                
+                self._log_step("sending_confirmation_email_recruiter", {
+                    "interview_id": interview.id,
+                    "to": recruiter_email_clean,
+                })
+                
+                print(f"\n🚀 Sending to recruiter: {recruiter_email_clean}")
+                try:
+                    send_mail(
+                        subject=recruiter_subject,
+                        message=recruiter_message,
+                        from_email=from_email,
+                        recipient_list=[recruiter_email_clean],
+                        html_message=recruiter_html,
+                        fail_silently=False,
+                    )
+                    print("✅ Recruiter email sent successfully!")
+                    recruiter_email_sent = True
+                except Exception as send_error:
+                    print(f"❌ ERROR: Recruiter email failed: {send_error}")
+                    raise
+            else:
+                print(f"\n⚠️  No recruiter email configured (skipping recruiter notification)")
+                print(f"   Tip: Set RECRUITER_EMAIL in .env file or add email to user account")
+            
+            interview.confirmation_sent_at = timezone.now()
+            interview.save(update_fields=['confirmation_sent_at'])
+            
+            print(f"\n✓ Confirmation timestamp updated: {interview.confirmation_sent_at}")
+            print("="*60 + "\n")
+            
+            self._log_step("confirmation_emails_sent", {
+                "interview_id": interview.id,
+                "candidate_email_sent": True,
+                "recruiter_email_sent": recruiter_email_sent,
+            })
+            
+            return True
+            
+        except Exception as exc:
+            import traceback
+            print(f"\n❌ EXCEPTION OCCURRED:")
+            print(f"   Error: {str(exc)}")
+            print(f"   Type: {type(exc).__name__}")
+            print(f"\n📋 Full Traceback:")
+            print(traceback.format_exc())
+            print("="*60 + "\n")
+            
+            error_details = {
+                "interview_id": interview.id,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "traceback": traceback.format_exc(),
+            }
+            self._log_error("confirmation_email_error", error_details)
+            return False
+
+    def send_followup_reminder(
+        self,
+        interview_id: int,
+    ) -> Dict[str, Any]:
+        """
+        Send a follow-up reminder if candidate hasn't responded.
+        
+        Args:
+            interview_id: ID of the interview
+        
+        Returns:
+            Dict with reminder status
+        """
+        try:
+            interview = Interview.objects.get(id=interview_id)
+            
+            if interview.status != 'PENDING':
+                return {
+                    "success": False,
+                    "error": f"Interview is not in PENDING status (current: {interview.status})",
+                }
+            
+            # Check if enough time has passed (e.g., 24 hours)
+            if interview.invitation_sent_at:
+                time_since_invitation = timezone.now() - interview.invitation_sent_at
+                if time_since_invitation < timedelta(hours=24):
+                    return {
+                        "success": False,
+                        "error": "Not enough time has passed since invitation (minimum 24 hours)",
+                    }
+            
+            # Send reminder - clean job role for subject
+            clean_job_role = self._clean_email_header(str(interview.job_role))
+            if len(clean_job_role) > 50:
+                clean_job_role = clean_job_role[:47] + "..."
+            subject = f"Reminder: Interview Invitation - {clean_job_role}"
+            
+            available_slots = json.loads(interview.available_slots_json)
+            context = {
+                'candidate_name': interview.candidate_name,
+                'job_role': interview.job_role,
+                'interview_type': interview.interview_type,
+                'available_slots': available_slots,
+                'interview_id': interview.id,
+            }
+            
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+            email_backend = getattr(settings, 'EMAIL_BACKEND', 'Not configured')
+            
+            print("\n📝 Rendering email templates...")
+            try:
+                message = render_to_string('recruitment_agent/emails/interview_reminder.txt', context)
+                html_message = render_to_string('recruitment_agent/emails/interview_reminder.html', context)
+                print("✓ Templates rendered successfully")
+            except Exception as template_error:
+                print(f"❌ ERROR: Template rendering failed: {template_error}")
+                raise
+            
+            print(f"✓ Email Backend: {email_backend}")
+            
+            self._log_step("sending_followup_reminder", {
+                "interview_id": interview.id,
+                "to": interview.candidate_email,
+            })
+            
+            print(f"\n🚀 Sending reminder email...")
+            try:
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[interview.candidate_email],
+                    html_message=html_message,
+                    fail_silently=False,
+                )
+                print("✅ Reminder email sent successfully!")
+            except Exception as send_error:
+                print(f"❌ ERROR: Reminder email failed: {send_error}")
+                print(f"   Error Type: {type(send_error).__name__}")
+                import traceback
+                print(f"\n📋 Full Traceback:")
+                print(traceback.format_exc())
+                raise
+            
+            interview.last_reminder_sent_at = timezone.now()
+            interview.save(update_fields=['last_reminder_sent_at'])
+            
+            print(f"✓ Timestamp updated: {interview.last_reminder_sent_at}")
+            print("="*60 + "\n")
+            
+            self._log_step("followup_reminder_sent", {
+                "interview_id": interview.id,
+            })
+            
+            return {
+                "success": True,
+                "interview_id": interview.id,
+                "message": "Follow-up reminder sent successfully",
+            }
+            
+        except Interview.DoesNotExist:
+            print(f"\n❌ ERROR: Interview not found (ID: {interview_id})")
+            print("="*60 + "\n")
+            return {
+                "success": False,
+                "error": "Interview not found",
+            }
+        except Exception as exc:
+            import traceback
+            print(f"\n❌ EXCEPTION OCCURRED:")
+            print(f"   Error: {str(exc)}")
+            print(f"   Type: {type(exc).__name__}")
+            print(f"\n📋 Full Traceback:")
+            print(traceback.format_exc())
+            print("="*60 + "\n")
+            
+            self._log_error("followup_reminder_error", {
+                "interview_id": interview_id,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "traceback": traceback.format_exc(),
+            })
+            return {
+                "success": False,
+                "error": str(exc),
+            }
+
+    def send_pre_interview_reminder(
+        self,
+        interview_id: int,
+        hours_before: int = 24,
+    ) -> Dict[str, Any]:
+        """
+        Send automated reminder before the interview.
+        
+        Args:
+            interview_id: ID of the interview
+            hours_before: Hours before interview to send reminder (default: 24)
+        
+        Returns:
+            Dict with reminder status
+        """
+        try:
+            interview = Interview.objects.get(id=interview_id)
+            
+            if interview.status != 'SCHEDULED' or not interview.scheduled_datetime:
+                return {
+                    "success": False,
+                    "error": "Interview is not scheduled or missing scheduled datetime",
+                }
+            
+            # Calculate when to send reminder
+            reminder_time = interview.scheduled_datetime - timedelta(hours=hours_before)
+            now = timezone.now()
+            
+            # Only send if we're within 1 hour of the reminder time
+            if abs((reminder_time - now).total_seconds()) > 3600:
+                return {
+                    "success": False,
+                    "error": f"Not the right time to send reminder (should be {hours_before} hours before interview)",
+                }
+            
+            # Send reminder - clean job role for subject
+            clean_job_role = self._clean_email_header(str(interview.job_role))
+            if len(clean_job_role) > 40:
+                clean_job_role = clean_job_role[:37] + "..."
+            
+            if hours_before == 24:
+                subject = f"Reminder: Interview Tomorrow - {clean_job_role}"
+            else:
+                subject = f"Reminder: Interview in {hours_before} hours - {clean_job_role}"
+            
+            context = {
+                'candidate_name': interview.candidate_name,
+                'job_role': interview.job_role,
+                'interview_type': interview.interview_type,
+                'scheduled_datetime': interview.scheduled_datetime,
+                'selected_slot': interview.selected_slot,
+                'hours_before': hours_before,
+            }
+            
+            print("\n" + "="*60)
+            print(f"📧 SENDING PRE-INTERVIEW REMINDER ({hours_before}h before)")
+            print("="*60)
+            print(f"✓ Interview ID: {interview.id}")
+            print(f"✓ Candidate: {interview.candidate_name} ({interview.candidate_email})")
+            print(f"✓ Scheduled: {interview.scheduled_datetime}")
+            
+            from_email_raw = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+            from_email = self._clean_email_header(from_email_raw)
+            to_email = self._clean_email_header(interview.candidate_email)
+            email_backend = getattr(settings, 'EMAIL_BACKEND', 'Not configured')
+            print(f"✓ Email Backend: {email_backend}")
+            
+            print("\n📝 Rendering email templates...")
+            try:
+                message = render_to_string('recruitment_agent/emails/interview_pre_reminder.txt', context)
+                html_message = render_to_string('recruitment_agent/emails/interview_pre_reminder.html', context)
+                print("✓ Templates rendered successfully")
+            except Exception as template_error:
+                print(f"❌ ERROR: Template rendering failed: {template_error}")
+                raise
+            
+            self._log_step("sending_pre_interview_reminder", {
+                "interview_id": interview.id,
+                "to": to_email,
+                "hours_before": hours_before,
+            })
+            
+            print(f"\n🚀 Sending pre-interview reminder...")
+            try:
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[to_email],
+                    html_message=html_message,
+                    fail_silently=False,
+                )
+                print("✅ Pre-interview reminder sent successfully!")
+                print("="*60 + "\n")
+            except Exception as send_error:
+                print(f"❌ ERROR: Pre-interview reminder failed: {send_error}")
+                print(f"   Error Type: {type(send_error).__name__}")
+                import traceback
+                print(f"\n📋 Full Traceback:")
+                print(traceback.format_exc())
+                print("="*60 + "\n")
+                raise
+            
+            self._log_step("pre_interview_reminder_sent", {
+                "interview_id": interview.id,
+                "hours_before": hours_before,
+            })
+            
+            return {
+                "success": True,
+                "interview_id": interview.id,
+                "message": f"Pre-interview reminder sent ({hours_before} hours before)",
+            }
+            
+        except Interview.DoesNotExist:
+            return {
+                "success": False,
+                "error": "Interview not found",
+            }
+        except Exception as exc:
+            self._log_error("pre_interview_reminder_error", {
+                "interview_id": interview_id,
+                "error": str(exc),
+            })
+            return {
+                "success": False,
+                "error": str(exc),
+            }
+
+    def get_interview_details(self, interview_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get interview details.
+        
+        Args:
+            interview_id: ID of the interview
+        
+        Returns:
+            Dict with interview details or None if not found
+        """
+        try:
+            interview = Interview.objects.get(id=interview_id)
+            available_slots = json.loads(interview.available_slots_json) if interview.available_slots_json else []
+            
+            return {
+                "interview_id": interview.id,
+                "candidate_name": interview.candidate_name,
+                "candidate_email": interview.candidate_email,
+                "candidate_phone": interview.candidate_phone,
+                "job_role": interview.job_role,
+                "interview_type": interview.interview_type,
+                "status": interview.status,
+                "scheduled_datetime": interview.scheduled_datetime.isoformat() if interview.scheduled_datetime else None,
+                "selected_slot": interview.selected_slot,
+                "available_slots": available_slots,
+                "created_at": interview.created_at.isoformat(),
+                "updated_at": interview.updated_at.isoformat(),
+            }
+        except Interview.DoesNotExist:
+            return None
+
+    def _log_step(
+        self, event_name: str, metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Log an event step"""
+        self.log_service.log_event(event_name, metadata or {})
+
+    def _log_error(
+        self, event_name: str, metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Log an error"""
+        self.log_service.log_error(event_name, metadata or {})
+
+    def _clean_email_header(self, text: str) -> str:
+        """
+        Clean text for use in email headers (subject, from, to).
+        Removes newlines, carriage returns, and extra whitespace.
+        
+        Args:
+            text: Text to clean
+        
+        Returns:
+            Cleaned text safe for email headers
+        """
+        if not text:
+            return ""
+        
+        # Remove newlines, carriage returns, tabs
+        cleaned = re.sub(r'[\r\n\t]+', ' ', str(text))
+        # Replace multiple spaces with single space
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        # Strip leading/trailing whitespace
+        cleaned = cleaned.strip()
+        
+        return cleaned
+

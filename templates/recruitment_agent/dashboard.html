@@ -1,0 +1,690 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}AI Recruitment - CV Analysis{% endblock %}
+
+{% block content %}
+<style>
+      :root {
+        --bg: #0f172a;
+        --panel: #0b1021;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #6b7280;
+        --accent: #2563eb;
+        --accent-2: #10b981;
+        --border: #e5e7eb;
+        --shadow: 0 10px 35px rgba(15, 23, 42, 0.12);
+      }
+      /* Recruitment dashboard specific styles - body styles inherited from base.html */
+      .container {
+        max-width: 1100px;
+        margin: 32px auto;
+        background: var(--card);
+        padding: 28px;
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        border: 1px solid var(--border);
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 2px solid var(--border);
+      }
+      .header h1 {
+        margin: 0;
+        letter-spacing: -0.5px;
+        font-size: 32px;
+      }
+      h4 {
+        margin: 0 0 6px 0;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin-bottom: 18px;
+      }
+      label {
+        display: block;
+        margin: 12px 0 6px;
+        font-weight: 600;
+      }
+      input[type="text"],
+      input[type="number"],
+      input[type="file"],
+      textarea {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 14px;
+        background: #f8fafc;
+        font-family: inherit;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+      input[type="file"] {
+        margin-top: 8px;
+        cursor: pointer;
+      }
+      .actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button {
+        background: linear-gradient(135deg, var(--accent), #1d4ed8);
+        color: #fff;
+        border: none;
+        padding: 12px 18px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+        transition: transform 0.05s ease, box-shadow 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+      }
+      button:disabled {
+        background: #9eb5ef;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      pre {
+        background: #0b1021;
+        color: #d0d7ff;
+        padding: 16px;
+        border-radius: 10px;
+        overflow: auto;
+        max-height: 480px;
+        margin-top: 12px;
+        border: 1px solid #111827;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+      }
+      .row > div {
+        flex: 1;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .results {
+        margin-top: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        overflow: hidden;
+      }
+      .card:hover {
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+        border-color: var(--accent);
+      }
+      .card.expanded {
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+      }
+      .card-header {
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .card-header:hover {
+        background: #f8fafc;
+      }
+      .card-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease, padding 0.3s ease;
+        padding: 0 16px;
+      }
+      .card.expanded .card-content {
+        max-height: 5000px;
+        padding: 16px;
+        border-top: 1px solid var(--border);
+      }
+      .card-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 0;
+      }
+      .card-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .expand-icon {
+        transition: transform 0.3s ease;
+        font-size: 18px;
+        color: var(--muted);
+      }
+      .card.expanded .expand-icon {
+        transform: rotate(180deg);
+      }
+      .card h4 {
+        margin: 0 0 6px 0;
+        letter-spacing: -0.2px;
+      }
+      .badge {
+        display: inline-block;
+        background: var(--accent);
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        margin-right: 6px;
+      }
+      .badge.secondary {
+        background: var(--accent-2);
+      }
+      .badge.reject {
+        background: #ef4444;
+      }
+      .badge.hold {
+        background: #f59e0b;
+      }
+      .score-circle {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: 6px solid rgba(37, 99, 235, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        color: #1d4ed8;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip {
+        background: #eef2ff;
+        color: #1e3a8a;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        border: 1px solid #c7d2fe;
+      }
+      .chip.matched {
+        background: #d1fae5;
+        color: #065f46;
+        border-color: #a7f3d0;
+      }
+      .chip.missing {
+        background: #fee2e2;
+        color: #991b1b;
+        border-color: #fecaca;
+      }
+      .section-title {
+        font-weight: 700;
+        margin-top: 12px;
+        margin-bottom: 6px;
+      }
+      .timeline {
+        border-left: 2px solid #e5e7eb;
+        padding-left: 10px;
+        margin: 6px 0;
+      }
+      .timeline-item {
+        margin-bottom: 8px;
+      }
+      .file-pill {
+        display: inline-block;
+        padding: 6px 10px;
+        background: #f1f5f9;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #334155;
+        border: 1px solid #e2e8f0;
+      }
+      #toggleJson {
+        cursor: pointer;
+        color: var(--accent);
+        text-decoration: underline;
+        font-size: 13px;
+      }
+      #output {
+        display: none;
+      }
+      .file-info {
+        margin-top: 8px;
+        padding: 8px;
+        background: #f8fafc;
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .upload-section {
+        background: #f8fafc;
+        padding: 16px;
+        border-radius: 10px;
+        border: 2px dashed var(--border);
+        margin-top: 8px;
+      }
+      .upload-section.has-file {
+        border-color: var(--accent-2);
+        background: #f0fdf4;
+      }
+      .toggle-btn.active {
+        border-color: var(--accent) !important;
+        background: #eef2ff !important;
+        color: var(--accent) !important;
+      }
+      .toggle-btn:not(.active) {
+        border-color: var(--border) !important;
+        background: #f8fafc !important;
+        color: var(--muted) !important;
+      }
+    </style>
+
+    <div class="container" style="max-width: 1100px; margin: 32px auto; background: var(--card); padding: 28px; border-radius: 16px; box-shadow: 0 10px 35px rgba(15, 23, 42, 0.12); border: 1px solid var(--border);">
+      <div class="header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid var(--border);">
+        <h1 style="margin: 0; letter-spacing: -0.5px; font-size: 32px;">🤖 AI Recruitment</h1>
+      </div>
+      <p class="subtitle">Upload CVs and job description to automatically parse, analyze, and rank candidates based on job requirements.</p>
+
+      <form id="cv-form">
+        <label>Upload CV files (multiple allowed)</label>
+        <div class="upload-section" id="cvUploadSection">
+          <input id="files" type="file" name="files" multiple accept=".pdf,.docx,.txt" required />
+          <div class="file-info" id="cvFileInfo">No files selected</div>
+        </div>
+
+        <label>Job Description (Optional - Choose one option)</label>
+        <div style="margin-bottom: 12px;">
+          <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+            <button type="button" id="toggleFileUpload" class="toggle-btn active" style="flex: 1; padding: 10px; border: 2px solid var(--accent); background: #eef2ff; color: var(--accent); border-radius: 8px; cursor: pointer; font-weight: 600;">📄 Upload File</button>
+            <button type="button" id="toggleTextInput" class="toggle-btn" style="flex: 1; padding: 10px; border: 2px solid var(--border); background: #f8fafc; color: var(--muted); border-radius: 8px; cursor: pointer; font-weight: 600;">✏️ Paste Text</button>
+          </div>
+          
+          <div id="fileUploadSection" class="upload-section">
+            <input id="jobDescription" type="file" name="job_description" accept=".pdf,.docx,.txt" />
+            <div class="hint">Upload a job description file (PDF, DOCX, or TXT). Keywords will be automatically extracted.</div>
+            <div class="file-info" id="jobDescFileInfo">No file selected</div>
+          </div>
+          
+          <div id="textInputSection" style="display: none;">
+            <textarea id="jobDescriptionText" placeholder="Paste your job description here...&#10;&#10;Example:&#10;We are looking for a Senior Full Stack Developer with experience in React, Node.js, and MongoDB. The candidate should have 3+ years of experience in web development..."></textarea>
+            <div class="hint">Paste the job description text directly. Keywords will be automatically extracted.</div>
+          </div>
+        </div>
+
+        <label>Job keywords (comma-separated) - Optional if job description is provided</label>
+        <input id="jobKeywords" type="text" placeholder="e.g., react,node,api,aws" />
+        <div class="hint">These influence role_fit_score during summarization. Leave empty if you uploaded a job description.</div>
+
+        <div class="row">
+          <div>
+            <label>Top N (optional)</label>
+            <input id="topN" type="number" min="1" placeholder="e.g., 5" />
+            <div class="hint">Limit ranked output.</div>
+          </div>
+          <div>
+            <label>Mode</label>
+            <div>
+              <input id="parseOnly" type="checkbox" />
+              <label for="parseOnly" style="display:inline; font-weight:400;">Parse only (skip summarization)</label>
+            </div>
+            <div class="hint">If unchecked, summarization + ranking will run.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="submitBtn" type="submit">Process CVs</button>
+          <span id="status" class="hint"></span>
+        </div>
+      </form>
+
+      <div class="row" style="margin-top:16px; align-items:center;">
+        <h3 style="margin:0;">Results</h3>
+        <span id="toggleJson" class="hint" style="margin-left:12px;">Show raw JSON</span>
+      </div>
+      <div id="results" class="results"></div>
+      <pre id="output">Awaiting submission...</pre>
+    </div>
+
+    <script>
+      const form = document.getElementById("cv-form");
+      const output = document.getElementById("output");
+      const statusEl = document.getElementById("status");
+      const submitBtn = document.getElementById("submitBtn");
+      const cvFileInput = document.getElementById("files");
+      const jobDescFileInput = document.getElementById("jobDescription");
+      const jobDescTextInput = document.getElementById("jobDescriptionText");
+      const cvFileInfo = document.getElementById("cvFileInfo");
+      const jobDescFileInfo = document.getElementById("jobDescFileInfo");
+      const cvUploadSection = document.getElementById("cvUploadSection");
+      const fileUploadSection = document.getElementById("fileUploadSection");
+      const textInputSection = document.getElementById("textInputSection");
+      const toggleFileUpload = document.getElementById("toggleFileUpload");
+      const toggleTextInput = document.getElementById("toggleTextInput");
+
+      // Toggle between file upload and text input
+      toggleFileUpload.addEventListener("click", () => {
+        fileUploadSection.style.display = "block";
+        textInputSection.style.display = "none";
+        toggleFileUpload.classList.add("active");
+        toggleTextInput.classList.remove("active");
+        jobDescFileInput.value = "";
+        jobDescTextInput.value = "";
+      });
+
+      toggleTextInput.addEventListener("click", () => {
+        fileUploadSection.style.display = "none";
+        textInputSection.style.display = "block";
+        toggleTextInput.classList.add("active");
+        toggleFileUpload.classList.remove("active");
+        jobDescFileInput.value = "";
+        jobDescTextInput.value = "";
+      });
+
+      // Update CV file info
+      cvFileInput.addEventListener("change", (e) => {
+        const files = e.target.files;
+        if (files.length > 0) {
+          const fileNames = Array.from(files).map(f => f.name).join(", ");
+          cvFileInfo.textContent = `${files.length} file(s) selected: ${fileNames}`;
+          cvUploadSection.classList.add("has-file");
+        } else {
+          cvFileInfo.textContent = "No files selected";
+          cvUploadSection.classList.remove("has-file");
+        }
+      });
+
+      // Update job description file info
+      jobDescFileInput.addEventListener("change", (e) => {
+        const files = e.target.files;
+        if (files.length > 0) {
+          jobDescFileInfo.textContent = `Selected: ${files[0].name}`;
+          fileUploadSection.classList.add("has-file");
+        } else {
+          jobDescFileInfo.textContent = "No file selected";
+          fileUploadSection.classList.remove("has-file");
+        }
+      });
+
+      // Update text input section when text is entered
+      jobDescTextInput.addEventListener("input", (e) => {
+        if (e.target.value.trim()) {
+          textInputSection.style.borderColor = "var(--accent-2)";
+          textInputSection.style.background = "#f0fdf4";
+        } else {
+          textInputSection.style.borderColor = "var(--border)";
+          textInputSection.style.background = "#f8fafc";
+        }
+      });
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const files = cvFileInput.files;
+        if (!files.length) {
+          alert("Please select at least one CV file.");
+          return;
+        }
+
+        const jobDescFile = jobDescFileInput.files[0];
+        const jobDescText = jobDescTextInput.value.trim();
+        const jobKeywords = document.getElementById("jobKeywords").value;
+        const topN = document.getElementById("topN").value;
+        const parseOnly = document.getElementById("parseOnly").checked;
+
+        const fd = new FormData();
+        Array.from(files).forEach((f) => fd.append("files", f));
+        if (jobDescFile) {
+          fd.append("job_description", jobDescFile);
+        }
+        if (jobDescText) {
+          fd.append("job_description_text", jobDescText);
+        }
+        if (jobKeywords) fd.append("job_keywords", jobKeywords);
+        if (topN) fd.append("top_n", topN);
+        fd.append("parse_only", parseOnly ? "true" : "false");
+
+        submitBtn.disabled = true;
+        statusEl.textContent = "Processing...";
+        output.textContent = "";
+        document.getElementById("results").innerHTML = "";
+
+        // Get CSRF token from cookie
+        function getCookie(name) {
+          let cookieValue = null;
+          if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+              const cookie = cookies[i].trim();
+              if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+              }
+            }
+          }
+          return cookieValue;
+        }
+
+        try {
+          const res = await fetch("{% url 'recruitment_process_cvs' %}", {
+            method: "POST",
+            body: fd,
+            headers: {
+              "X-CSRFToken": getCookie('csrftoken')
+            }
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || "Request failed");
+          }
+          const data = await res.json();
+          output.textContent = JSON.stringify(data, null, 2);
+          statusEl.textContent = "Done.";
+          renderResults(data);
+        } catch (err) {
+          output.textContent = `Error: ${err.message}`;
+          statusEl.textContent = "Error.";
+          document.getElementById("results").innerHTML = `<div class="hint" style="color: #ef4444;">Error: ${err.message}</div>`;
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      document.getElementById("toggleJson").addEventListener("click", () => {
+        const pre = document.getElementById("output");
+        if (pre.style.display === "none") {
+          pre.style.display = "block";
+          document.getElementById("toggleJson").textContent = "Hide raw JSON";
+        } else {
+          pre.style.display = "none";
+          document.getElementById("toggleJson").textContent = "Show raw JSON";
+        }
+      });
+
+      function renderResults(data) {
+        const container = document.getElementById("results");
+        container.innerHTML = "";
+        if (!Array.isArray(data)) {
+          container.innerHTML = "<div class='hint'>No results to display.</div>";
+          return;
+        }
+        data.forEach((item, index) => {
+          const hasInsights = !!item.insights;
+          const parsed = item.parsed || item.data || {};
+          const insights = item.insights || {};
+          const qualification = item.qualification || {};
+          const enrichment = item.enrichment || {};
+          const title = parsed.name || parsed.email || item.file || "Candidate";
+          const rank = item.rank || null;
+          const score = insights.role_fit_score ?? "—";
+          const summary = insights.candidate_summary || parsed.summary || "—";
+          const skills = parsed.skills || [];
+          const exp = parsed.experience || [];
+          const edu = parsed.education || [];
+          const certs = parsed.certifications || [];
+          
+          // Qualification data
+          const decision = qualification.decision || null;
+          const confidence = qualification.confidence_score ?? null;
+          const priority = qualification.priority || null;
+          const matchedSkills = qualification.matched_skills || [];
+          const missingSkills = qualification.missing_skills || [];
+          const matchPercentage = qualification.match_percentage ?? null;
+          const matchedCount = qualification.matched_count ?? 0;
+          const totalKeywords = qualification.total_keywords ?? 0;
+
+          // Compact header view
+          let decisionBadge = "";
+          if (decision) {
+            const decisionClass = decision === "INTERVIEW" ? "secondary" : decision === "HOLD" ? "hold" : "reject";
+            decisionBadge = `<span class="badge ${decisionClass}">${decision}</span>`;
+          }
+          const priorityBadge = priority ? `<span class="badge" style="background: #fef3c7; color: #92400e;">${priority}</span>` : "";
+
+          // Detailed content (hidden by default)
+          const skillHtml = skills.length
+            ? `<div class="chips">${skills
+                .map((s) => {
+                  const isMatched = matchedSkills.some(ms => ms.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(ms.toLowerCase()));
+                  const isMissing = missingSkills.some(ms => ms.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(ms.toLowerCase()));
+                  const chipClass = isMatched ? "matched" : isMissing ? "missing" : "";
+                  return `<span class="chip ${chipClass}">${s}</span>`;
+                })
+                .join("")}</div>`
+            : "<div class='hint'>No skills</div>";
+
+          const expHtml = exp.length
+            ? `<div class="timeline">${exp
+                .map(
+                  (e) =>
+                    `<div class="timeline-item">
+                      <div><strong>${e.role || "Role"}</strong> @ ${e.company || "Company"}</div>
+                      <div class="hint">${e.start_date || "?"} - ${e.end_date || "?"}</div>
+                      ${e.description ? `<div class="hint" style="margin-top:4px;">${e.description}</div>` : ""}
+                    </div>`
+                )
+                .join("")}</div>`
+            : "<div class='hint'>No experience</div>";
+
+          const eduHtml = edu.length
+            ? `<ul style="margin:0; padding-left:20px;">${edu
+                .map(
+                  (ed) =>
+                    `<li style="margin-bottom:4px;">${ed.degree || "Degree"} — ${ed.institution || "Institution"} ${
+                      ed.graduation_year ? `(${ed.graduation_year})` : ""
+                    }</li>`
+                )
+                .join("")}</ul>`
+            : "<div class='hint'>No education</div>";
+
+          const certHtml = certs.length
+            ? `<div class="chips">${certs
+                .map(
+                  (c) =>
+                    `<span class="chip">${c.name || "Certification"}${c.issuer ? ` — ${c.issuer}` : ""}${
+                      c.year ? ` (${c.year})` : ""
+                    }</span>`
+                )
+                .join("")}</div>`
+            : "<div class='hint'>No certifications</div>";
+
+          const matchedSkillsHtml = matchedSkills.length
+            ? `<div class="section-title">✅ Matched Skills (${matchedSkills.length})</div>
+               <div class="chips">${matchedSkills.map(s => `<span class="chip matched">${s}</span>`).join("")}</div>`
+            : "";
+
+          const missingSkillsHtml = missingSkills.length
+            ? `<div class="section-title">❌ Missing Skills (${missingSkills.length})</div>
+               <div class="chips">${missingSkills.map(s => `<span class="chip missing">${s}</span>`).join("")}</div>`
+            : "";
+
+          const card = document.createElement("div");
+          card.className = "card";
+          card.dataset.index = index;
+          
+          const header = document.createElement("div");
+          header.className = "card-header";
+          header.innerHTML = `
+            <div class="card-title">
+              ${rank ? `<span class="badge secondary" style="font-size:14px; padding:6px 12px;">#${rank}</span>` : ""}
+              <h4 style="margin:0; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;">${title}</h4>
+              ${item.file ? `<span class="file-pill" style="font-size:11px;">${item.file}</span>` : ""}
+            </div>
+            <div class="card-actions">
+              ${hasInsights ? `<div class="score-circle" style="width:48px; height:48px; font-size:16px;">${score}</div>` : ""}
+              ${matchPercentage !== null ? `<span class="badge" style="background: #dbeafe; color: #1e40af;">${matchPercentage}% Match</span>` : ""}
+              ${decisionBadge}
+              ${priorityBadge}
+              ${confidence !== null ? `<span class="badge" style="background: #f3f4f6; color: #374151; font-size:11px;">Conf: ${confidence}</span>` : ""}
+              <span class="expand-icon">▼</span>
+            </div>
+          `;
+          
+          const content = document.createElement("div");
+          content.className = "card-content";
+          content.innerHTML = `
+            <div class="section-title">📄 Summary</div>
+            <div style="margin-bottom:16px; line-height:1.6;">${summary}</div>
+            
+            ${matchPercentage !== null ? `
+            <div class="section-title">📊 Match Analysis</div>
+            <div style="margin-bottom:16px;">
+              <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:8px;">
+                <div><strong>Match:</strong> ${matchedCount}/${totalKeywords} skills (${matchPercentage}%)</div>
+              </div>
+            </div>
+            ` : ""}
+            
+            ${matchedSkillsHtml ? `<div style="margin-bottom:16px;">${matchedSkillsHtml}</div>` : ""}
+            ${missingSkillsHtml ? `<div style="margin-bottom:16px;">${missingSkillsHtml}</div>` : ""}
+            
+            <div class="section-title">🛠️ Skills</div>
+            <div style="margin-bottom:16px;">${skillHtml}</div>
+            
+            <div class="section-title">💼 Experience</div>
+            <div style="margin-bottom:16px;">${expHtml}</div>
+            
+            <div class="section-title">🎓 Education</div>
+            <div style="margin-bottom:16px;">${eduHtml}</div>
+            
+            <div class="section-title">🏆 Certifications</div>
+            <div style="margin-bottom:16px;">${certHtml}</div>
+          `;
+          
+          header.addEventListener("click", () => {
+            card.classList.toggle("expanded");
+          });
+          
+          card.appendChild(header);
+          card.appendChild(content);
+          container.appendChild(card);
+        });
+      }
+
+    </script>
+{% endblock %}
+

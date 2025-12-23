@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Confirmed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 32px;
+        }
+        .confirmation-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 25px;
+            border-radius: 8px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        .confirmation-box h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 22px;
+        }
+        .info-item {
+            margin-bottom: 12px;
+            color: #555;
+            font-size: 16px;
+        }
+        .info-item strong {
+            color: #333;
+            display: inline-block;
+            width: 160px;
+        }
+        .instructions {
+            background: #fff9e6;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        .instructions h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .instructions ul {
+            margin-left: 20px;
+            color: #555;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .note {
+            color: #666;
+            font-size: 14px;
+            margin-top: 30px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1>Interview Confirmed!</h1>
+        
+        <div class="confirmation-box">
+            <h2>Your Interview Details</h2>
+            <div class="info-item"><strong>Position:</strong> {{ interview.job_role }}</div>
+            <div class="info-item"><strong>Candidate:</strong> {{ interview.candidate_name }}</div>
+            <div class="info-item"><strong>Interview Type:</strong> {{ interview.get_interview_type_display }}</div>
+            <div class="info-item"><strong>Scheduled Date & Time:</strong> {{ selected_slot }}</div>
+        </div>
+
+        {% if interview.interview_type == 'ONLINE' %}
+        <div class="instructions">
+            <h3>📋 Preparation Instructions (Online Interview)</h3>
+            <ul>
+                <li>Join the meeting 5 minutes early</li>
+                <li>Ensure you have a stable internet connection</li>
+                <li>Find a quiet, well-lit space</li>
+                <li>Have your resume and relevant documents ready</li>
+                <li>You will receive the meeting link via email separately</li>
+            </ul>
+        </div>
+        {% else %}
+        <div class="instructions">
+            <h3>📋 Preparation Instructions (Onsite Interview)</h3>
+            <ul>
+                <li>Arrive 10 minutes early</li>
+                <li>Bring a copy of your resume</li>
+                <li>Bring a valid ID</li>
+                <li>Prepare any questions you may have</li>
+            </ul>
+        </div>
+        {% endif %}
+
+        <p class="note">
+            A confirmation email has been sent to your email address ({{ interview.candidate_email }}). 
+            You will also receive reminder emails 24 hours and 1 hour before the interview.
+        </p>
+    </div>
+</body>
+</html>
+

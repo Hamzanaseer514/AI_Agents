@@ -1,0 +1,24 @@
+Dear {{ candidate_name }},
+
+Thank you for your interest in the {{ job_role }} position. We are pleased to invite you for an interview.
+
+Interview Details:
+- Position: {{ job_role }}
+- Interview Type: {{ interview_type }}
+
+Please select one of the following available time slots that works best for you:
+
+{% for slot in available_slots %}
+{{ forloop.counter }}. {{ slot.display }}
+{% endfor %}
+
+To confirm your preferred time slot, please visit this link:
+{{ slot_selection_url }}
+
+Click the link above to select your preferred interview time slot.
+
+We look forward to speaking with you!
+
+Best regards,
+Recruitment Team
+

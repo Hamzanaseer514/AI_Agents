@@ -1,0 +1,85 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Project Manager AI{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{% url 'dashboard' %}" class="nav-brand">Project Manager AI</a>
+            <ul class="nav-links">
+                {% if user.is_authenticated %}
+                    <li><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                    {% if user.profile.is_project_manager %}
+                        <li><a href="{% url 'project_list' %}">Projects</a></li>
+                    {% endif %}
+                    {% if user.is_superuser or user.is_staff %}
+                    <li><a href="{% url 'select_role' %}">Switch Role</a></li>
+                    {% endif %}
+                    {% if user.profile.is_project_manager %}
+                        <li><a href="{% url 'ai_agents_test' %}">AI Agents</a></li>
+                    {% endif %}
+                    {% if user.profile.is_recruitment_agent %}
+                        <li><a href="{% url 'recruitment_dashboard' %}">Recruitment</a></li>
+                    {% endif %}
+                    <li class="user-info">
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                            {{ user.username }} 
+                            {% if user.is_superuser or user.is_staff %}
+                                {% if request.session.selected_role %}
+                                    {% if request.session.selected_role == 'project_manager' %}
+                                    <span style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; margin-left: 0.5rem;">
+                                        PM (Admin)
+                                    </span>
+                                    {% elif request.session.selected_role == 'recruitment_agent' %}
+                                    <span style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; margin-left: 0.5rem;">
+                                        RA (Admin)
+                                    </span>
+                                    {% elif request.session.selected_role == 'team_member' %}
+                                    <span style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; margin-left: 0.5rem;">
+                                        TM (Admin)
+                                    </span>
+                                    {% else %}
+                                    <span style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; margin-left: 0.5rem;">
+                                        Viewer (Admin)
+                                    </span>
+                                    {% endif %}
+                                {% else %}
+                                <span style="background: var(--warning-color); color: white; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; margin-left: 0.5rem;">
+                                    Admin
+                                </span>
+                                {% endif %}
+                            {% elif user.profile %}
+                            <span style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; margin-left: 0.5rem;">
+                                {{ user.profile.get_role_display|default:"Member" }}
+                            </span>
+                            {% endif %}
+                        </span>
+                    </li>
+                    <li><a href="{% url 'logout' %}" class="btn-primary">Logout</a></li>
+                {% else %}
+                    <li><a href="{% url 'login' %}">Login</a></li>
+                    <li><a href="{% url 'signup' %}" class="btn-primary">Sign Up</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
+    
+    {% if messages %}
+        <div class="container">
+            <ul class="messages">
+                {% for message in messages %}
+                    <li class="{{ message.tags }}">{{ message }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+    
+    {% block content %}{% endblock %}
+</body>
+</html>

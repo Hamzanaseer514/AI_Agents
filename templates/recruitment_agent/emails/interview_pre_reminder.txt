@@ -1,0 +1,32 @@
+Dear {{ candidate_name }},
+
+This is a reminder that you have an interview scheduled:
+
+Position: {{ job_role }}
+Interview Type: {{ interview_type }}
+Date & Time: {{ selected_slot }}
+
+{% if hours_before == 24 %}
+Your interview is scheduled for tomorrow. Please make sure you are prepared and available.
+{% else %}
+Your interview is scheduled in {{ hours_before }} hours. Please make sure you are prepared and available.
+{% endif %}
+
+{% if interview_type == 'ONLINE' %}
+For online interviews, please ensure you have:
+- A stable internet connection
+- A quiet, well-lit space
+- Your resume and any relevant documents ready
+- The meeting link (sent separately)
+{% else %}
+For onsite interviews, please:
+- Arrive 10 minutes early
+- Bring a copy of your resume
+- Bring a valid ID
+{% endif %}
+
+We look forward to meeting you!
+
+Best regards,
+Recruitment Team
+
