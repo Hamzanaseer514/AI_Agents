@@ -96,6 +96,7 @@ class CustomUserCreationForm(UserCreationForm):
             ('project_manager', 'Project Manager'),
             ('recruitment_agent', 'Recruitment Agent'),
             ('frontline_agent', 'Frontline Agent'),
+            ('marketing_agent', 'Marketing Agent'),
         ],
         required=True,
         widget=forms.Select(attrs={

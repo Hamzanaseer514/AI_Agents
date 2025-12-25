@@ -45,5 +45,8 @@ urlpatterns = [
     # Frontline Agent Core APIs (from core.Fronline_agent)
     path('api/frontline/', include('core.Fronline_agent.urls')),
     
+    # Marketing Agent
+    path('marketing/', include('marketing_agent.urls')),
+
     path('', user_login, name='home'),  # Home redirects to login
 ]

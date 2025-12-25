@@ -39,7 +39,7 @@ def select_role(request):
     
     if request.method == 'POST':
         selected_role = request.POST.get('role')
-        if selected_role in ['project_manager', 'recruitment_agent', 'frontline_agent']:
+        if selected_role in ['project_manager', 'recruitment_agent', 'frontline_agent', 'marketing_agent']:
             # Store selected role in session
             request.session['selected_role'] = selected_role
             if selected_role == 'recruitment_agent':
@@ -48,6 +48,9 @@ def select_role(request):
             elif selected_role == 'frontline_agent':
                 messages.success(request, f'Switched to Frontline Agent dashboard')
                 return redirect('frontline_dashboard')
+            elif selected_role == 'marketing_agent':
+                messages.success(request, f'Switched to Marketing Agent dashboard')
+                return redirect('marketing_dashboard')
             else:
                 messages.success(request, f'Switched to Project Manager dashboard')
                 return redirect('dashboard')
@@ -73,6 +76,10 @@ def dashboard(request):
     if request.user.profile.is_frontline_agent() and not (request.user.is_superuser or request.user.is_staff):
         return redirect('frontline_dashboard')
     
+    # Check if user is a marketing agent and redirect them
+    if request.user.profile.is_marketing_agent() and not (request.user.is_superuser or request.user.is_staff):
+        return redirect('marketing_dashboard')
+
     # For admin users, use session role; otherwise use profile role
     if request.user.is_superuser or request.user.is_staff:
         selected_role = request.session.get('selected_role')
@@ -85,6 +92,9 @@ def dashboard(request):
         # If admin selected frontline_agent role, redirect to frontline dashboard
         if selected_role == 'frontline_agent':
             return redirect('frontline_dashboard')
+        # If admin selected marketing_agent role, redirect to marketing dashboard
+        if selected_role == 'marketing_agent':
+            return redirect('marketing_dashboard')
     else:
         selected_role = None
     

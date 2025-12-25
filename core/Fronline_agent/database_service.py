@@ -103,12 +103,13 @@ class PayPerProjectDatabaseService:
         """Fallback to local KnowledgeBase model if PayPerProject table doesn't exist"""
         try:
             from Frontline_agent.models import KnowledgeBase
+            from django.db.models import Q
             queryset = KnowledgeBase.objects.filter(category='faq')
             
             if search_term:
                 queryset = queryset.filter(
-                    models.Q(title__icontains=search_term) |
-                    models.Q(content__icontains=search_term)
+                    Q(title__icontains=search_term) |
+                    Q(content__icontains=search_term)
                 )
             
             return [
@@ -164,13 +165,13 @@ class PayPerProjectDatabaseService:
         """Fallback to local KnowledgeBase model"""
         try:
             from Frontline_agent.models import KnowledgeBase
-            from django.db import models
+            from django.db.models import Q
             queryset = KnowledgeBase.objects.filter(category='policies')
             
             if search_term:
                 queryset = queryset.filter(
-                    models.Q(title__icontains=search_term) |
-                    models.Q(content__icontains=search_term)
+                    Q(title__icontains=search_term) |
+                    Q(content__icontains=search_term)
                 )
             
             return [
@@ -228,13 +229,13 @@ class PayPerProjectDatabaseService:
         """Fallback to local KnowledgeBase model"""
         try:
             from Frontline_agent.models import KnowledgeBase
-            from django.db import models
+            from django.db.models import Q
             queryset = KnowledgeBase.objects.filter(category='documentation')
             
             if search_term:
                 queryset = queryset.filter(
-                    models.Q(title__icontains=search_term) |
-                    models.Q(content__icontains=search_term)
+                    Q(title__icontains=search_term) |
+                    Q(content__icontains=search_term)
                 )
             
             return [

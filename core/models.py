@@ -221,6 +221,7 @@ class UserProfile(models.Model):
         ('viewer', 'Viewer'),
         ('recruitment_agent', 'Recruitment Agent'),
         ('frontline_agent', 'Frontline Agent'),
+        ('marketing_agent', 'Marketing Agent'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
@@ -242,6 +243,10 @@ class UserProfile(models.Model):
     def is_frontline_agent(self):
         """Check if user is a frontline agent"""
         return self.role == 'frontline_agent'
+
+    def is_marketing_agent(self):
+        """Check if user is a marketing agent"""
+        return self.role == 'marketing_agent'
 
 
 @receiver(post_save, sender=User)
