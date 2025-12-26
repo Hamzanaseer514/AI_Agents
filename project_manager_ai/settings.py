@@ -303,24 +303,51 @@ WSGI_APPLICATION = 'project_manager_ai.wsgi.application'
 
 
 # --------------------
-# Database (SQL Server Express)
+# Database Configuration
 # --------------------
-DATABASES = {
-    'default': {
-        'ENGINE': 'mssql',
-        'NAME': os.getenv('DB_NAME', 'project_manager_db'),
-        'HOST': r'localhost',
-        'OPTIONS': {
-            'driver': 'ODBC Driver 17 for SQL Server',
-            'trusted_connection': 'yes',
-        },
-    }
-}
+# Set USE_SQL_SERVER=True in .env to use SQL Server, otherwise uses SQLite
+USE_SQL_SERVER = os.getenv('USE_SQL_SERVER', 'False').lower() == 'true'
+USE_WINDOWS_AUTH = os.getenv('USE_WINDOWS_AUTH', 'False').lower() == 'true'
 
-# ⚠️ Notes:
-# - No PORT (SQL Express uses dynamic ports)
-# - No USER / PASSWORD (Windows Authentication)
-# - No extra_params (causes invalid connection string errors)
+if USE_SQL_SERVER:
+    # SQL Server Database Configuration
+    # ODBC Driver 18 Configuration:
+    # - Encrypt=yes is required (default behavior)
+    # - TrustServerCertificate=yes bypasses certificate validation (for local dev only)
+    # - For production, remove TrustServerCertificate and use proper SSL certificates
+    db_driver = os.getenv('DB_DRIVER', 'ODBC Driver 18 for SQL Server')
+    
+    db_options = {
+        'driver': db_driver,
+        'extra_params': 'TrustServerCertificate=yes',
+    }
+    
+    # For Windows Authentication, add Trusted_Connection parameter
+    if USE_WINDOWS_AUTH:
+        db_options['extra_params'] = 'TrustServerCertificate=yes;Trusted_Connection=yes'
+    
+    DATABASES = {
+        'default': {
+            'ENGINE': 'mssql',
+            'NAME': os.getenv('DB_NAME', 'project_manager_db'),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '1433'),
+            'OPTIONS': db_options,
+        }
+    }
+    
+    # Add user/password only for SQL Server Authentication (not Windows Auth)
+    if not USE_WINDOWS_AUTH:
+        DATABASES['default']['USER'] = os.getenv('DB_USER', '')
+        DATABASES['default']['PASSWORD'] = os.getenv('DB_PASSWORD', '')
+else:
+    # Default SQLite database (for development/testing)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # --------------------

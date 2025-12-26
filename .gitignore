@@ -1,6 +1,5 @@
 # Environment variables
-.env
-<<<<<<< HEAD
+.env  HEAD
 .evn
 
 # Python cache
@@ -21,7 +20,7 @@ db.sqlite3
 # OS files
 .DS_Store
 Thumbs.db
-=======
+
 .env.local
 .env.*.local
 
