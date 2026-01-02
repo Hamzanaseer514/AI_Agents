@@ -262,8 +262,7 @@ INSTALLED_APPS = [
     'marketing_agent.apps.MarketingAgentConfig',  # Use app config for agent registration
     'Frontline_agent.apps.FrontlineAgentConfig',  # Frontline Agent app
     
-    # Celery Beat (Optional - uncomment if using Celery Beat instead of cron)
-    # 'django_celery_beat',
+   
 ]
 
 MIDDLEWARE = [
@@ -422,17 +421,3 @@ else:
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER if EMAIL_HOST_USER else 'noreply@example.com').strip()
 RECRUITER_EMAIL = os.getenv('RECRUITER_EMAIL', '').strip()
 
-# --------------------
-# Celery Configuration (Optional - for Celery Beat automation)
-# --------------------
-# Uncomment and configure if you want to use Celery Beat instead of cron
-# Requires: pip install celery redis django-celery-beat
-# See CELERY_BEAT_SETUP.md for full setup instructions
-
-# CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-# CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
-# CELERY_ACCEPT_CONTENT = ['json']
-# CELERY_TASK_SERIALIZER = 'json'
-# CELERY_RESULT_SERIALIZER = 'json'
-# CELERY_TIMEZONE = TIME_ZONE
-# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
