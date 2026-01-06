@@ -265,8 +265,6 @@ INSTALLED_APPS = [
     'recruitment_agent',
     'marketing_agent.apps.MarketingAgentConfig',  # Use app config for agent registration
     'Frontline_agent.apps.FrontlineAgentConfig',  # Frontline Agent app
-    
-   
     'api',  # API app
 ]
 
@@ -302,33 +300,22 @@ WSGI_APPLICATION = 'project_manager_ai.wsgi.application'
 
 
 # --------------------
-# Database Configuration
+# Database (SQL Server Express)
 # --------------------
-# Use SQLite for development (no setup required)
-# To use SQL Server instead, set USE_SQL_SERVER=True in .env
-USE_SQL_SERVER = os.getenv('USE_SQL_SERVER', 'False').lower() == 'true'
 
-if USE_SQL_SERVER:
-    # SQL Server Configuration
-    DATABASES = {
-        'default': {
-            'ENGINE': 'mssql',
-            'NAME': os.getenv('DB_NAME', 'project_manager_db'),
-            'HOST': os.getenv('DB_HOST', 'localhost'),
-            'OPTIONS': {
-                'driver': 'ODBC Driver 17 for SQL Server',
-                'trusted_connection': 'yes',
-            },
-        }
-    }
-else:
-    # SQLite Configuration (default for development)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'mssql',
+        'NAME': os.getenv('DB_NAME', 'project_manager_db'),
+        'HOST': r'localhost\SQLEXPRESS',
+        'OPTIONS': {
+            'driver': 'ODBC Driver 17 for SQL Server',
+            'trusted_connection': 'yes',
+        },
+
+    }}
+
 
 
 # --------------------
@@ -432,13 +419,6 @@ else:
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER if EMAIL_HOST_USER else 'noreply@example.com').strip()
 RECRUITER_EMAIL = os.getenv('RECRUITER_EMAIL', '').strip()
 
-# --------------------
-# Email Tracking Configuration
-# --------------------
-# Base URL for email tracking (opens/clicks)
-# For local testing with ngrok, use your ngrok URL
-# For production, use your actual domain
-SITE_URL = os.getenv('SITE_URL', 'https://fiddly-uncouth-ryan.ngrok-free.dev')
 
 # --------------------
 # Email Tracking Configuration
@@ -446,7 +426,7 @@ SITE_URL = os.getenv('SITE_URL', 'https://fiddly-uncouth-ryan.ngrok-free.dev')
 # Base URL for email tracking (opens/clicks)
 # For local testing with ngrok, use your ngrok URL
 # For production, use your actual domain
-# SITE_URL = os.getenv('SITE_URL', 'https://fiddly-uncouth-ryan.ngrok-free.dev')
+SITE_URL = os.getenv('SITE_URL', 'https://fiddly-uncouth-ryan.ngrok-free.dev')
 
 
 # --------------------
