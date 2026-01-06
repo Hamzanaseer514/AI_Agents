@@ -13,6 +13,15 @@ urlpatterns = [
     path('api/qa/', views.test_marketing_qa, name='test_marketing_qa'),
     path('api/market-research/', views.test_market_research, name='test_market_research'),
     path('api/outreach-campaign/', views.test_outreach_campaign, name='test_outreach_campaign'),
+    path('api/document-authoring/', views.test_document_authoring, name='test_document_authoring'),
+    path('api/proactive-notification/', views.test_proactive_notification, name='test_proactive_notification'),
+    path('api/notifications/', views.get_notifications, name='get_notifications'),
+    path('api/notifications/<int:notification_id>/read/', views.mark_notification_read, name='mark_notification_read'),
+    path('api/notifications/<int:notification_id>/delete/', views.delete_notification, name='delete_notification'),
+    # Document management
+    path('documents/', views.documents_list, name='documents_list'),
+    path('documents/<int:document_id>/', views.document_detail, name='document_detail'),
+    path('documents/<int:document_id>/download/<str:format_type>/', views.document_download, name='document_download'),
     # Campaign details endpoint
     path('api/campaign/<int:campaign_id>/', views.get_campaign_details, name='get_campaign_details'),
     # Campaign management
@@ -49,6 +58,7 @@ urlpatterns = [
     # Email sending status
     path('campaigns/<int:campaign_id>/email-status/', views_email_status.email_sending_status, name='email_sending_status'),
     path('campaigns/<int:campaign_id>/email-status/api/', views_email_status.email_status_api, name='email_status_api'),
+    path('campaigns/<int:campaign_id>/debug-sequence-times/', views_email_status.debug_sequence_times, name='debug_sequence_times'),
     # Manual sequence email trigger
     path('campaigns/<int:campaign_id>/trigger-sequence-emails/', views_sequence_sender.trigger_sequence_emails, name='trigger_sequence_emails'),
 ]

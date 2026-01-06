@@ -19,3 +19,6 @@ echo [%date% %time%] Completed. >> send_sequence_emails.log
 echo. >> send_sequence_emails.log
 
 
+
+
+
