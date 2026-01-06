@@ -302,22 +302,19 @@ WSGI_APPLICATION = 'project_manager_ai.wsgi.application'
 # --------------------
 # Database (SQL Server Express)
 # --------------------
+
 DATABASES = {
     'default': {
         'ENGINE': 'mssql',
         'NAME': os.getenv('DB_NAME', 'project_manager_db'),
-        'HOST': r'localhost',
+        'HOST': r'localhost\SQLEXPRESS',
         'OPTIONS': {
             'driver': 'ODBC Driver 17 for SQL Server',
             'trusted_connection': 'yes',
         },
-    }
-}
 
-# ⚠️ Notes:
-# - No PORT (SQL Express uses dynamic ports)
-# - No USER / PASSWORD (Windows Authentication)
-# - No extra_params (causes invalid connection string errors)
+    }}
+
 
 
 # --------------------
