@@ -173,7 +173,10 @@ def email_sequences_list(request, campaign_id):
             is_sub_sequence = data.get('is_sub_sequence', False)
             
             # ENFORCE: Only 1 main sequence per campaign
-            # But ONLY if we're trying to create a main sequence (not a sub-sequence)
+            # Determine if this is a sub-sequence (defaults to main sequence if not provided)
+            is_sub_sequence = data.get('is_sub_sequence', False)
+            
+            # ENFORCE: Only 1 main sequence per campaign
             if not is_sub_sequence:
                 existing_main_sequence = EmailSequence.objects.filter(
                     campaign=campaign,
@@ -189,6 +192,7 @@ def email_sequences_list(request, campaign_id):
             sequence = EmailSequence.objects.create(
                 campaign=campaign,
                 name=data.get('name'),
+                is_sub_sequence=is_sub_sequence,
                 is_sub_sequence=is_sub_sequence,
             )
             
