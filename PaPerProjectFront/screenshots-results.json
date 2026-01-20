@@ -1,0 +1,188 @@
+[
+  {
+    "route": "/",
+    "name": "HomePage",
+    "description": "Landing page featuring hero section, quick value grid, how it works section, trust badges, company pitch, key features, unique benefits, solutions showcase, benchmark slider, AI predictor CTA, social proof, zero fees section, referral program, and FAQ section. This is the main entry point for the platform.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\HomePage.png"
+  },
+  {
+    "route": "/how-it-works",
+    "name": "HowItWorksPage",
+    "description": "Comprehensive explanation of the platform process from idea to invoice. Includes hero section, problem statement, step-by-step process flow, why it works section, results and team section, comparison table, project showcase, FAQ section, and final CTA. Explains the managed project delivery approach.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\HowItWorksPage.png"
+  },
+  {
+    "route": "/industries",
+    "name": "IndustriesPage",
+    "description": "Lists all available industries served by the platform. Displays industry cards organized by categories including Primary Sectors, Manufacturing & Engineering, Finance & Legal, Health & Science, Consumer & Services, Media & Communications, and Transportation & Logistics. Each card shows industry name, description, and navigation to detail pages.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\IndustriesPage.png"
+  },
+  {
+    "route": "/industries/agriculture",
+    "name": "IndustryDetailPage",
+    "description": "Detailed page for Agriculture industry. Shows industry-specific challenges, market trends, tech innovations, regulatory landscape, and solutions. Includes hero section with industry icon, challenges section, insights section, and CTA. This page is dynamically generated based on the industry slug.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\IndustryDetailPage.png"
+  },
+  {
+    "route": "/reviews",
+    "name": "ReviewsPage",
+    "description": "Customer reviews and testimonials page. Displays client feedback, ratings, case studies, and success stories. Helps build trust and credibility by showcasing real client experiences and project outcomes.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ReviewsPage.png"
+  },
+  {
+    "route": "/contact",
+    "name": "ContactPage",
+    "description": "Contact page with multiple contact options including contact form, contact info bar (email, phone, office address), complaints form section, and business hours information. Provides various ways for users to reach out including general inquiries and complaint filing.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ContactPage.png"
+  },
+  {
+    "route": "/consultation",
+    "name": "ConsultationPage",
+    "description": "Book a consultation page with AI predictor form. Allows users to schedule consultations and get AI-powered project estimates. Includes form fields for project details and requirements to provide personalized consultation.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ConsultationPage.png"
+  },
+  {
+    "route": "/features",
+    "name": "FeaturesPage",
+    "description": "Comprehensive features page showcasing all platform capabilities. Includes hero section with taglines, feature comparison table, detailed feature cards (Outcome-based pricing, Growth & scaling, Business health, IP protection, B2B marketplace, White-label products, Startup & enterprise solutions, Reporting & analytics, LPNPL model, Project vault, Credits system, Project cloning, Upgrade flexibility, Miles program, BIP system, Referral program, Project insurance, EaaS model), and combined CTA sections for quiz and payment options.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\FeaturesPage.png"
+  },
+  {
+    "route": "/pricing",
+    "name": "PricingPage",
+    "description": "Membership plans and pricing page. Shows three tiers: Basic (free), Standard (£199/mo), and Pro (£699/mo) with detailed feature comparison table. Includes project opportunities, merit & checks, platform usage limits, white-label product listings, and extras. Features accordion with feature explanations and CTA buttons for each plan.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\PricingPage.png"
+  },
+  {
+    "route": "/hire-talent",
+    "name": "HireTalentPage",
+    "description": "Hire talent request form page. Allows clients to submit requests for hiring specialized talent. Includes form with project requirements, skills needed, timeline, and budget information to match with appropriate talent.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\HireTalentPage.png"
+  },
+  {
+    "route": "/post-project",
+    "name": "PostProjectPage",
+    "description": "Post a new project page. Provides interface for clients to create and post project listings. Includes project details form, scope definition, budget setting, timeline selection, and submission workflow.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\PostProjectPage.png"
+  },
+  {
+    "route": "/start-project",
+    "name": "StartProjectPage",
+    "description": "Start a new project page. Guides users through the initial project setup process. Includes project scoping wizard, requirement gathering, team matching information, and next steps.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\StartProjectPage.png"
+  },
+  {
+    "route": "/white-label-products",
+    "name": "WhiteLabelPage",
+    "description": "White label products information page. Explains the white-label product catalog system where partners can list their pre-packaged services. Includes product listing options, branding customization, and marketplace integration details.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\WhiteLabelPage.png"
+  },
+  {
+    "route": "/expert-advice",
+    "name": "ExpertAdvicePage",
+    "description": "Expert advice and guidance page. Provides access to expert consultations, advisory services, and professional guidance for project planning and execution. Includes expert profiles and consultation booking.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ExpertAdvicePage.png"
+  },
+  {
+    "route": "/quiz",
+    "name": "QuizPage",
+    "description": "Interactive quiz page. Helps users determine their project needs and get personalized recommendations. Includes multiple-choice questions, progress tracking, and results with suggested solutions based on answers.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\QuizPage.png"
+  },
+  {
+    "route": "/payment-options",
+    "name": "PaymentOptionsPage",
+    "description": "Available payment options page. Details all accepted payment methods including credit cards, bank transfers, payment plans, and credits system. Includes security information and payment terms.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\PaymentOptionsPage.png"
+  },
+  {
+    "route": "/resources",
+    "name": "ResourcesPage",
+    "description": "Resources hub page. Central location for all learning materials including blog articles, customer stories, featured videos, academy courses, Agentic AI resources (what is agentic AI, AI agent vs agentic AI, business use cases, how to build an AI agent), and connection options. Organized by categories: Learn, Agentic AI, and Connect.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ResourcesPage.png"
+  },
+  {
+    "route": "/blog",
+    "name": "BlogPage",
+    "description": "Blog listing page displaying all blog posts. Shows post cards with featured images, categories, titles, descriptions, author information, publication dates, and read more links. Posts are sorted by date with grid layout.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\BlogPage.png"
+  },
+  {
+    "route": "/blog/upwork-fiverr-alternative-zero-commission",
+    "name": "BlogPostPage",
+    "description": "Individual blog post page. Displays full blog article content with hero image, title, author, date, category, article body content with formatted text, images, and related posts section. This is a dynamic route that displays any blog post based on slug. This example shows the \"Upwork & Fiverr Alternative\" blog post.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\BlogPostPage.png"
+  },
+  {
+    "route": "/solutions/ai-automations",
+    "name": "AiAutomationsPage",
+    "description": "AI automation solutions page. Showcases AI automation services and capabilities including custom AI solutions, workflow automation, intelligent process automation, and integration services. Includes use cases, benefits, and CTA sections.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\AiAutomationsPage.png"
+  },
+  {
+    "route": "/solutions/n8n-automations",
+    "name": "N8nAutomationsPage",
+    "description": "N8N automation solutions page. Details N8N-based automation services for workflow automation, API integrations, data processing pipelines, and business process automation. Includes N8N platform benefits and implementation services.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\N8nAutomationsPage.png"
+  },
+  {
+    "route": "/solutions/it-consulting-solutions",
+    "name": "ItSolutionsPage",
+    "description": "IT consulting solutions page. Provides IT consulting services including architecture design, technology selection, implementation planning, and technical advisory. Includes service offerings, methodologies, and case studies.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ItSolutionsPage.png"
+  },
+  {
+    "route": "/solutions/sell-buy-businesses",
+    "name": "SellBuyBusinessesPage",
+    "description": "Sell and buy businesses platform page. Marketplace for buying and selling businesses with listing management, valuation services, due diligence support, and transaction facilitation. Includes marketplace features and success stories.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\SellBuyBusinessesPage.png"
+  },
+  {
+    "route": "/careers",
+    "name": "CareersPage",
+    "description": "Career opportunities and job listings page. Displays available positions, job descriptions, requirements, benefits, and application forms. Includes company culture information, team testimonials, and career growth opportunities.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\CareersPage.png"
+  },
+  {
+    "route": "/ai-predictor",
+    "name": "AiPredictorPage",
+    "description": "AI predictor tool page. Interactive tool that uses AI to predict project costs, timelines, and resource requirements based on project parameters. Includes input form, prediction results, and detailed breakdowns with confidence scores.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\AiPredictorPage.png"
+  },
+  {
+    "route": "/startups",
+    "name": "StartupsPage",
+    "description": "Startup solutions and services page. Tailored offerings for startups including MVP development, funding support, growth strategies, and startup-specific features. Includes startup success stories, packages, and special programs.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\StartupsPage.png"
+  },
+  {
+    "route": "/referrals",
+    "name": "ReferralsPage",
+    "description": "Referral program information page. Details the referral program including referral rewards, how it works, referral links, tracking dashboard, and terms & conditions. Includes CTA to share referral links and earn rewards.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ReferralsPage.png"
+  },
+  {
+    "route": "/value-and-pricing",
+    "name": "ValueAndPricingPage",
+    "description": "Value and pricing information page. Explains the value proposition, pricing model, cost breakdown, ROI calculator, and comparison with alternatives. Helps users understand the value they receive for their investment.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ValueAndPricingPage.png"
+  },
+  {
+    "route": "/agentic-ai-models",
+    "name": "AgenticAiModelsPage",
+    "description": "Agentic AI models showcase page. Displays available Agentic AI models, their capabilities, use cases, and integration options. Includes model comparisons, performance metrics, and selection guides for choosing the right AI model.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\AgenticAiModelsPage.png"
+  },
+  {
+    "route": "/resources/agentic-ai-explained",
+    "name": "AgenticAiResourcePage",
+    "description": "Agentic AI explained resource page. Comprehensive educational resource covering what Agentic AI is, what \"agentic\" means, differences between AI agents and agentic AI, how to build AI agents, available tools, frameworks (LangChain, AutoGPT, BabyAGI, etc.), business use cases, and implementation guides.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\AgenticAiResourcePage.png"
+  },
+  {
+    "route": "/apply-for-projects",
+    "name": "ApplyForProjectsPage",
+    "description": "Apply for available projects page. Allows freelancers/teams to browse open projects, view project details, submit applications, and track application status. Includes project filters, application form, portfolio upload, and application history.",
+    "screenshotPath": "D:\\download\\payPerProject\\screenshots\\ApplyForProjectsPage.png"
+  }
+]

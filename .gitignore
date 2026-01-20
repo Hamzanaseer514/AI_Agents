@@ -163,4 +163,5 @@ desktop.ini
 #project_manager_ai
 project_manager_ai/settings.py
 # Frontend directory
-PaPerProjectFront/
+PaPerProjectFront/node_modules/
+PaPerProjectFront/New/
