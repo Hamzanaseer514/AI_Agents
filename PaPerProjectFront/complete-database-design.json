@@ -1,0 +1,77 @@
+{
+  "database_info": {
+    "name": "payperproject_db",
+    "system": "PostgreSQL 14+ (Recommended) or MySQL 8.0+",
+    "charset": "UTF-8",
+    "timezone": "UTC"
+  },
+  "tables": [
+    {
+      "name": "users",
+      "description": "Main user table storing all user accounts (clients, freelancers, admins)",
+      "columns": [
+        {"name": "id", "type": "BIGINT PRIMARY KEY AUTO_INCREMENT", "nullable": false, "description": "Unique user identifier"},
+        {"name": "email", "type": "VARCHAR(255) UNIQUE", "nullable": false, "description": "User email address"},
+        {"name": "password_hash", "type": "VARCHAR(255)", "nullable": false, "description": "Bcrypt hashed password"},
+        {"name": "first_name", "type": "VARCHAR(100)", "nullable": true, "description": "First name"},
+        {"name": "last_name", "type": "VARCHAR(100)", "nullable": true, "description": "Last name"},
+        {"name": "phone", "type": "VARCHAR(20)", "nullable": true, "description": "Phone number"},
+        {"name": "user_type", "type": "ENUM('client', 'freelancer', 'admin', 'project_manager')", "nullable": false, "description": "Type of user"},
+        {"name": "account_status", "type": "ENUM('active', 'inactive', 'suspended', 'pending')", "nullable": false, "default": "pending", "description": "Account status"},
+        {"name": "email_verified", "type": "BOOLEAN", "nullable": false, "default": false, "description": "Email verification status"},
+        {"name": "last_login", "type": "TIMESTAMP", "nullable": true, "description": "Last login timestamp"},
+        {"name": "created_at", "type": "TIMESTAMP", "nullable": false, "default": "CURRENT_TIMESTAMP", "description": "Account creation timestamp"},
+        {"name": "updated_at", "type": "TIMESTAMP", "nullable": false, "default": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "description": "Last update timestamp"}
+      ],
+      "indexes": ["email", "user_type", "account_status"],
+      "foreign_keys": []
+    },
+    {
+      "name": "user_profiles",
+      "description": "Extended user profile information",
+      "columns": [
+        {"name": "id", "type": "BIGINT PRIMARY KEY AUTO_INCREMENT", "nullable": false, "description": "Profile ID"},
+        {"name": "user_id", "type": "BIGINT", "nullable": false, "description": "Foreign key to users table"},
+        {"name": "company_name", "type": "VARCHAR(255)", "nullable": true, "description": "Company name"},
+        {"name": "bio", "type": "TEXT", "nullable": true, "description": "User biography"},
+        {"name": "avatar_url", "type": "VARCHAR(500)", "nullable": true, "description": "Profile picture URL"},
+        {"name": "location", "type": "VARCHAR(255)", "nullable": true, "description": "User location"},
+        {"name": "timezone", "type": "VARCHAR(50)", "nullable": true, "description": "User timezone"},
+        {"name": "website", "type": "VARCHAR(255)", "nullable": true, "description": "Website URL"},
+        {"name": "linkedin", "type": "VARCHAR(255)", "nullable": true, "description": "LinkedIn profile"},
+        {"name": "github", "type": "VARCHAR(255)", "nullable": true, "description": "GitHub profile"},
+        {"name": "created_at", "type": "TIMESTAMP", "nullable": false, "default": "CURRENT_TIMESTAMP"},
+        {"name": "updated_at", "type": "TIMESTAMP", "nullable": false, "default": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"}
+      ],
+      "indexes": ["user_id"],
+      "foreign_keys": [{"column": "user_id", "references": "users(id)", "on_delete": "CASCADE"}]
+    },
+    {
+      "name": "projects",
+      "description": "Core project table storing all project information",
+      "columns": [
+        {"name": "id", "type": "BIGINT PRIMARY KEY AUTO_INCREMENT", "nullable": false, "description": "Unique project identifier"},
+        {"name": "client_id", "type": "BIGINT", "nullable": false, "description": "Foreign key to users table (client)"},
+        {"name": "project_manager_id", "type": "BIGINT", "nullable": true, "description": "Foreign key to users table (project manager)"},
+        {"name": "title", "type": "VARCHAR(255)", "nullable": false, "description": "Project title"},
+        {"name": "description", "type": "TEXT", "nullable": false, "description": "Project description"},
+        {"name": "industry_id", "type": "BIGINT", "nullable": true, "description": "Foreign key to industries table"},
+        {"name": "project_type", "type": "VARCHAR(50)", "nullable": false, "description": "Type of project (website, mobile_app, saas, etc.)"},
+        {"name": "status", "type": "ENUM('draft', 'posted', 'in_progress', 'review', 'completed', 'cancelled')", "nullable": false, "default": "draft", "description": "Project status"},
+        {"name": "budget_min", "type": "DECIMAL(10,2)", "nullable": true, "description": "Minimum budget"},
+        {"name": "budget_max", "type": "DECIMAL(10,2)", "nullable": true, "description": "Maximum budget"},
+        {"name": "deadline", "type": "DATE", "nullable": true, "description": "Project deadline"},
+        {"name": "priority", "type": "ENUM('low', 'medium', 'high', 'urgent')", "nullable": false, "default": "medium", "description": "Project priority"},
+        {"name": "created_at", "type": "TIMESTAMP", "nullable": false, "default": "CURRENT_TIMESTAMP"},
+        {"name": "updated_at", "type": "TIMESTAMP", "nullable": false, "default": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"}
+      ],
+      "indexes": ["client_id", "project_manager_id", "industry_id", "status", "project_type"],
+      "foreign_keys": [
+        {"column": "client_id", "references": "users(id)", "on_delete": "CASCADE"},
+        {"column": "project_manager_id", "references": "users(id)", "on_delete": "SET NULL"},
+        {"column": "industry_id", "references": "industries(id)", "on_delete": "SET NULL"}
+      ]
+    }
+  ]
+}
+
