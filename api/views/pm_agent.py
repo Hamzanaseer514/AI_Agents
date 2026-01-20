@@ -614,7 +614,7 @@ def task_prioritization(request):
             {"status": "error", "message": "Access denied. Project manager or company user role required."},
             status=status.HTTP_403_FORBIDDEN,
         )
-
+    
     # Get company from company_user
     company = company_user.company
 
@@ -974,7 +974,7 @@ def knowledge_qa(request):
             {"status": "error", "message": "Access denied. Project manager or company user role required."},
             status=status.HTTP_403_FORBIDDEN,
         )
-
+    
     # Get company from company_user
     company = company_user.company
 

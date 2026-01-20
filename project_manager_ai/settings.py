@@ -277,6 +277,7 @@ INSTALLED_APPS = [
     # Third party apps
     'rest_framework',
     'rest_framework.authtoken',
+    'corsheaders',  # CORS headers for cross-origin requests
 
     'core',
     'project_manager_agent',
@@ -288,6 +289,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS middleware (should be early)
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -327,7 +329,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'mssql',
         'NAME': os.getenv('DB_NAME', 'project_manager_db'),
-        'HOST': r'localhost\SQLEXPRESS',
+        'HOST': r'localhost',
         'OPTIONS': {
             'driver': 'ODBC Driver 17 for SQL Server',
             'trusted_connection': 'yes',
@@ -447,6 +449,40 @@ RECRUITER_EMAIL = os.getenv('RECRUITER_EMAIL', '').strip()
 # For production, use your actual domain
 SITE_URL = os.getenv('SITE_URL', 'https://fiddly-uncouth-ryan.ngrok-free.dev')
 
+
+# --------------------
+# CORS Configuration
+# --------------------
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Allow credentials (cookies, authorization headers, etc.)
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow all headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Allow all methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
 
 # --------------------
 # REST Framework Configuration

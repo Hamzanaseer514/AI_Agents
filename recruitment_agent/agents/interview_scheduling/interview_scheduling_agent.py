@@ -50,6 +50,8 @@ class InterviewSchedulingAgent:
         candidate_phone: Optional[str] = None,
         cv_record_id: Optional[int] = None,
         recruiter_id: Optional[int] = None,
+        company_user_id: Optional[int] = None,
+        email_settings: Optional[Dict[str, Any]] = None,
         custom_slots: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """
@@ -91,8 +93,41 @@ class InterviewSchedulingAgent:
         
         print("\n⚙️  APPLYING RECRUITER EMAIL SETTINGS TO INTERVIEW")
         print(f"   Recruiter ID: {recruiter_id}")
+        print(f"   Company User ID: {company_user_id}")
         
-        if recruiter_id:
+        # Use provided email_settings if available
+        if email_settings:
+            followup_delay = email_settings.get('followup_delay_hours', followup_delay)
+            reminder_hours = email_settings.get('reminder_hours_before', reminder_hours)
+            max_followups = email_settings.get('max_followup_emails', max_followups)
+            min_between = email_settings.get('min_hours_between_followups', min_between)
+            print(f"   ✅ Using provided email settings:")
+            print(f"      • Follow-up delay: {followup_delay} hours ({followup_delay * 60} minutes)")
+            print(f"      • Reminder hours before: {reminder_hours} hours")
+            print(f"      • Max follow-ups: {max_followups}")
+            print(f"      • Min hours between follow-ups: {min_between} hours ({min_between * 60} minutes)")
+        elif company_user_id:
+            # Try to get company user email settings
+            try:
+                from core.models import CompanyUser
+                company_user = CompanyUser.objects.get(id=company_user_id)
+                settings = company_user.recruiter_email_settings
+                followup_delay = settings.followup_delay_hours
+                reminder_hours = settings.reminder_hours_before
+                max_followups = settings.max_followup_emails
+                min_between = settings.min_hours_between_followups
+                print(f"   ✅ Using company user custom settings:")
+                print(f"      • Follow-up delay: {followup_delay} hours ({followup_delay * 60} minutes)")
+                print(f"      • Reminder hours before: {reminder_hours} hours")
+                print(f"      • Max follow-ups: {max_followups}")
+                print(f"      • Min hours between follow-ups: {min_between} hours ({min_between * 60} minutes)")
+            except CompanyUser.DoesNotExist:
+                print(f"   ⚠️  Company user not found (ID: {company_user_id}), using defaults")
+            except RecruiterEmailSettings.DoesNotExist:
+                print(f"   ⚠️  No email settings found for company user, using defaults")
+            except Exception as e:
+                print(f"   ⚠️  Error getting company user settings: {str(e)}, using defaults")
+        elif recruiter_id:
             try:
                 from django.contrib.auth.models import User
                 recruiter = User.objects.get(id=recruiter_id)
@@ -114,7 +149,7 @@ class InterviewSchedulingAgent:
             except Exception as e:
                 print(f"   ⚠️  Error getting recruiter settings: {str(e)}, using defaults")
         else:
-            print(f"   ⚠️  No recruiter ID provided, using defaults")
+            print(f"   ⚠️  No recruiter ID or company user ID provided, using defaults")
         
         print(f"   📝 Final settings to apply:")
         print(f"      • Follow-up delay: {followup_delay} hours ({followup_delay * 60} minutes)")
@@ -122,25 +157,36 @@ class InterviewSchedulingAgent:
         print(f"      • Max follow-ups: {max_followups}")
         print(f"      • Min hours between follow-ups: {min_between} hours ({min_between * 60} minutes)")
         
-        # Create interview record with recruiter preferences
-        interview = Interview.objects.create(
-            candidate_name=candidate_name,
-            candidate_email=candidate_email,
-            candidate_phone=candidate_phone,
-            job_role=job_role,
-            interview_type=interview_type,
-            status='PENDING',
-            available_slots_json=json.dumps(available_slots, default=str),
-            cv_record_id=cv_record_id,
-            recruiter_id=recruiter_id,
-            confirmation_token=confirmation_token,
-            invitation_sent_at=timezone.now(),
-            # Apply recruiter email timing preferences
-            followup_delay_hours=followup_delay,
-            reminder_hours_before=reminder_hours,
-            max_followup_emails=max_followups,
-            min_hours_between_followups=min_between,
-        )
+        # Create interview record with recruiter/company_user preferences
+        interview_data = {
+            'candidate_name': candidate_name,
+            'candidate_email': candidate_email,
+            'candidate_phone': candidate_phone,
+            'job_role': job_role,
+            'interview_type': interview_type,
+            'status': 'PENDING',
+            'available_slots_json': json.dumps(available_slots, default=str),
+            'cv_record_id': cv_record_id,
+            'recruiter_id': recruiter_id,
+            'confirmation_token': confirmation_token,
+            'invitation_sent_at': timezone.now(),
+            # Apply email timing preferences
+            'followup_delay_hours': followup_delay,
+            'reminder_hours_before': reminder_hours,
+            'max_followup_emails': max_followups,
+            'min_hours_between_followups': min_between,
+        }
+        
+        # Add company_user if provided
+        if company_user_id:
+            from core.models import CompanyUser
+            try:
+                company_user = CompanyUser.objects.get(id=company_user_id)
+                interview_data['company_user'] = company_user
+            except CompanyUser.DoesNotExist:
+                pass
+        
+        interview = Interview.objects.create(**interview_data)
         
         print(f"   ✅ Interview created with ID: {interview.id}")
         print(f"   ✅ Email settings saved to interview record")
