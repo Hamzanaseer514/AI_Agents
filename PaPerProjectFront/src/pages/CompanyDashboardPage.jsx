@@ -15,8 +15,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { companyJobsService } from '@/services';
 import { companyApi } from '@/services/companyAuthService';
 import RecruitmentDashboard from '@/components/recruitment/RecruitmentDashboard';
+import DashboardNavbar from '@/components/common/DashboardNavbar';
 import { 
-  Building2, LogOut, Plus, Briefcase, Users, Eye, 
+  Building2, Plus, Briefcase, Users, Eye, 
   Loader2, Search, Calendar, MapPin, Clock, Download, BrainCircuit, FolderKanban,
   ChevronDown, ChevronRight, ListTodo, UserCheck
 } from 'lucide-react';
@@ -303,50 +304,36 @@ const CompanyDashboardPage = () => {
       </Helmet>
       <div className="min-h-screen bg-background">
         {/* Header */}
-        <header className="border-b bg-card">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-3">
-                <Building2 className="h-8 w-8 text-primary" />
-                <div>
-                  <h1 className="text-xl font-bold">{companyUser.companyName || 'Company Dashboard'}</h1>
-                  <p className="text-sm text-muted-foreground">{companyUser.fullName}</p>
-                </div>
-              </div>
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            </div>
-            {/* Navigation Tabs */}
-            <div className="flex gap-2 border-t pt-4">
-              <Button
-                variant={activeSection === 'dashboard' ? 'default' : 'ghost'}
-                onClick={() => setActiveSection('dashboard')}
-                className="flex items-center gap-2"
-              >
-                <Building2 className="h-4 w-4" />
-                Dashboard
-              </Button>
-              <Button
-                variant={activeSection === 'project-manager' ? 'default' : 'ghost'}
-                onClick={() => navigate('/project-manager/dashboard')}
-                className="flex items-center gap-2"
-              >
-                <BrainCircuit className="h-4 w-4" />
-                Project Manager Agent
-              </Button>
-              <Button
-                variant={activeSection === 'recruitment' ? 'default' : 'ghost'}
-                onClick={() => setActiveSection('recruitment')}
-                className="flex items-center gap-2"
-              >
-                <UserCheck className="h-4 w-4" />
-                Recruitment Agent
-              </Button>
-            </div>
-          </div>
-        </header>
+        <DashboardNavbar
+          icon={Building2}
+          title={companyUser.companyName || 'Company Dashboard'}
+          subtitle={companyUser.fullName}
+          user={companyUser}
+          userRole="Company User"
+          showNavTabs={true}
+          activeSection={activeSection}
+          onLogout={handleLogout}
+          navItems={[
+            {
+              label: 'Dashboard',
+              icon: Building2,
+              section: 'dashboard',
+              onClick: () => setActiveSection('dashboard'),
+            },
+            {
+              label: 'Project Manager Agent',
+              icon: BrainCircuit,
+              section: 'project-manager',
+              onClick: () => navigate('/project-manager/dashboard'),
+            },
+            {
+              label: 'Recruitment Agent',
+              icon: UserCheck,
+              section: 'recruitment',
+              onClick: () => setActiveSection('recruitment'),
+            },
+          ]}
+        />
 
         <div className="container mx-auto px-4 py-8">
           {activeSection === 'dashboard' && (
