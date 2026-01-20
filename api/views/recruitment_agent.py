@@ -947,6 +947,8 @@ def interview_settings(request):
                 company_user=company_user
             )
             
+            update_availability_only = request.data.get('update_availability', False)
+            
             if 'schedule_from_date' in request.data:
                 from datetime import datetime
                 date_str = request.data['schedule_from_date']
@@ -970,9 +972,110 @@ def interview_settings(request):
                 time_str = request.data['end_time']
                 settings.end_time = datetime.strptime(time_str, '%H:%M').time()
             if 'interview_time_gap' in request.data:
-                settings.interview_time_gap = int(request.data['interview_time_gap'])
-            if 'time_slots_json' in request.data:
-                settings.time_slots_json = request.data['time_slots_json']
+                gap_value = int(request.data['interview_time_gap'])
+                if gap_value < 15:
+                    return Response({
+                        'status': 'error',
+                        'message': 'interview_time_gap must be at least 15 minutes.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                if gap_value > 120:
+                    return Response({
+                        'status': 'error',
+                        'message': 'interview_time_gap cannot exceed 120 minutes.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                settings.interview_time_gap = gap_value
+            
+            # Validate date range
+            if settings.schedule_from_date and settings.schedule_to_date:
+                if settings.schedule_from_date > settings.schedule_to_date:
+                    return Response({
+                        'status': 'error',
+                        'message': 'schedule_from_date cannot be after schedule_to_date.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate time range
+            if settings.start_time and settings.end_time:
+                if settings.start_time >= settings.end_time:
+                    return Response({
+                        'status': 'error',
+                        'message': 'start_time must be before end_time.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Handle time slots
+            # Check if we're only updating availability (not generating new slots)
+            if update_availability_only and 'time_slots_json' in request.data:
+                # Only update availability for existing slots
+                availability_data = request.data['time_slots_json']
+                if settings.time_slots_json:
+                    availability_map = {item['datetime']: item.get('available', True) for item in availability_data}
+                    for slot in settings.time_slots_json:
+                        if slot.get('datetime') in availability_map:
+                            slot['available'] = availability_map[slot['datetime']]
+                    settings.time_slots_json = settings.time_slots_json
+                else:
+                    return Response({
+                        'status': 'error',
+                        'message': 'No time slots found. Please generate time slots first.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            # Generate time slots automatically if date range is provided (only if not updating availability)
+            elif settings.schedule_from_date and settings.schedule_to_date:
+                # Generate time slots if date range is provided and slots don't exist
+                from datetime import timedelta, time as dt_time
+                
+                time_slots = []
+                current_date = settings.schedule_from_date
+                
+                # Parse start and end times
+                if isinstance(settings.start_time, dt_time):
+                    start_hour = settings.start_time.hour
+                    start_min = settings.start_time.minute
+                else:
+                    time_parts = str(settings.start_time).split(':')
+                    start_hour = int(time_parts[0])
+                    start_min = int(time_parts[1])
+                
+                if isinstance(settings.end_time, dt_time):
+                    end_hour = settings.end_time.hour
+                    end_min = settings.end_time.minute
+                else:
+                    time_parts = str(settings.end_time).split(':')
+                    end_hour = int(time_parts[0])
+                    end_min = int(time_parts[1])
+                
+                start_minutes = start_hour * 60 + start_min
+                end_minutes = end_hour * 60 + end_min
+                
+                # Preserve existing availability if slots already exist
+                existing_availability = {}
+                if settings.time_slots_json:
+                    existing_availability = {slot.get('datetime'): slot.get('available', True) for slot in settings.time_slots_json}
+                
+                # Generate slots for each date
+                while current_date <= settings.schedule_to_date:
+                    current_minutes = start_minutes
+                    while current_minutes < end_minutes:
+                        hours = current_minutes // 60
+                        minutes = current_minutes % 60
+                        time_str = f"{hours:02d}:{minutes:02d}"
+                        datetime_str = f"{current_date.isoformat()}T{time_str}"
+                        
+                        # Preserve availability status for existing slots
+                        available = True
+                        if datetime_str in existing_availability:
+                            available = existing_availability[datetime_str]
+                        
+                        time_slots.append({
+                            'date': current_date.isoformat(),
+                            'time': time_str,
+                            'datetime': datetime_str,
+                            'available': available
+                        })
+                        
+                        current_minutes += settings.interview_time_gap
+                    
+                    current_date += timedelta(days=1)
+                
+                settings.time_slots_json = time_slots
             
             settings.save()
             
