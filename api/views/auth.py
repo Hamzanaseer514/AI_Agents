@@ -72,8 +72,14 @@ def login(request):
         # Get user type
         user_type = 'client'
         account_status = 'active' if user.is_active else 'inactive'
+        role = None
+        created_by_company_user = False
+        
         if hasattr(user, 'profile'):
-            role = user.profile.role
+            profile = user.profile
+            role = profile.role
+            created_by_company_user = profile.created_by_company_user is not None
+            
             if role == 'developer':
                 user_type = 'freelancer'
             elif user.is_staff:
@@ -91,6 +97,8 @@ def login(request):
                     'userType': user_type,
                     'accountStatus': account_status,
                     'emailVerified': True,
+                    'role': role,
+                    'createdByCompanyUser': created_by_company_user,
                 },
                 'token': token.key,
             }

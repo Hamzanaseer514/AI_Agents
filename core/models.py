@@ -311,6 +311,8 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='team_member')
     # Company association (required for project_manager role)
     company = models.ForeignKey('Company', on_delete=models.SET_NULL, null=True, blank=True, related_name='user_profiles')
+    # Track which company user created this user
+    created_by_company_user = models.ForeignKey('CompanyUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_users', help_text='Company user who created this user')
     # Additional fields from payPerProject
     company_name = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True, help_text="Phone number with country code")

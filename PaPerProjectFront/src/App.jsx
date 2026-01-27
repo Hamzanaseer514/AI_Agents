@@ -39,6 +39,7 @@ import CompanyRegisterPage from '@/pages/CompanyRegisterPage';
 import CompanyLoginPage from '@/pages/CompanyLoginPage';
 import CompanyDashboardPage from '@/pages/CompanyDashboardPage';
 import ProjectManagerDashboardPage from '@/pages/ProjectManagerDashboardPage';
+import UserDashboardPage from '@/pages/UserDashboardPage';
 import MarketingAgentPage from '@/pages/MarketingAgentPage';
 import RecruitmentAgentPage from '@/pages/RecruitmentAgentPage';
 import ModulePurchaseSuccessPage from '@/pages/ModulePurchaseSuccessPage';
@@ -68,6 +69,16 @@ import { useTranslation } from 'react-i18next';
               element={
                 <ProtectedRoute requireAdmin={true}>
                   <AdminDashboardPage />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* User Dashboard (for company-created users) */}
+            <Route 
+              path="/user/dashboard" 
+              element={
+                <ProtectedRoute>
+                  <UserDashboardPage />
                 </ProtectedRoute>
               } 
             />
