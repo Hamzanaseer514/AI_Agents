@@ -302,9 +302,8 @@ class UserProfile(models.Model):
         ('team_member', 'Team Member'),
         ('developer', 'Developer'),
         ('viewer', 'Viewer'),
-        ('recruitment_agent', 'Recruitment Agent'),
-        ('frontline_agent', 'Frontline Agent'),
-        ('marketing_agent', 'Marketing Agent'),
+        ('internee', 'Internee'),
+        ('designer', 'Designer'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')

@@ -27,6 +27,15 @@ import {
   TrendingUp
 } from 'lucide-react';
 
+// Helper function to format role for display
+const formatRole = (role) => {
+  if (!role) return 'USER';
+  return role
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 const UserDashboardPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -293,26 +302,29 @@ const UserDashboardPage = () => {
     navigate('/login');
   };
 
+  // Get user role and format it for display
+  const userRole = user?.role || 'user';
+  const formattedRole = formatRole(userRole);
+  const dashboardTitle = `THE ${formattedRole.toUpperCase()} DASHBOARD`;
+  const dashboardSubtitle = 'Manage your tasks and projects';
+
   return (
     <>
       <Helmet>
-        <title>My Dashboard - Pay Per Project</title>
+        <title>{dashboardTitle} - Pay Per Project</title>
       </Helmet>
 
       <DashboardNavbar 
+        icon={User}
+        title={dashboardTitle}
+        subtitle={dashboardSubtitle}
         user={user} 
+        userRole={formattedRole}
         onLogout={handleLogout}
         showCompanyUserOptions={false}
       />
 
       <div className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold">My Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            Manage your tasks and projects
-          </p>
-        </div>
-
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="tasks">

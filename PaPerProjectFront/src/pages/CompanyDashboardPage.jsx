@@ -1421,9 +1421,8 @@ const CompanyDashboardPage = () => {
                       <SelectItem value="team_member">Team Member</SelectItem>
                       <SelectItem value="developer">Developer</SelectItem>
                       <SelectItem value="viewer">Viewer</SelectItem>
-                      <SelectItem value="recruitment_agent">Recruitment Agent</SelectItem>
-                      <SelectItem value="frontline_agent">Frontline Agent</SelectItem>
-                      <SelectItem value="marketing_agent">Marketing Agent</SelectItem>
+                      <SelectItem value="internee">Internee</SelectItem>
+                      <SelectItem value="designer">Designer</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
