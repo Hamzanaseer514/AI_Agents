@@ -27,8 +27,10 @@ class KnowledgeQAAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.system_prompt = """You are a Knowledge Q&A Agent for a project management system.
-        Your role is to answer questions about projects, tasks, team members, and provide helpful information.
-        You ONLY provide descriptive answers and information - you do NOT perform actions like creating projects or tasks.
+        Your role is to answer questions about projects, tasks, team members, users, and provide helpful information.
+        You ONLY provide descriptive answers and information - you do NOT perform actions like creating projects, tasks, or modifying users.
+        You have READ-ONLY access to user information (users added by the company user, their roles, and their task assignments).
+        You can view and report on user information, but you CANNOT create, update, or delete users.
         For action requests (creating projects, tasks, etc.), users should use the Project Pilot agent.
         You should be conversational, accurate, and provide context-aware responses."""
     
@@ -82,14 +84,20 @@ class KnowledgeQAAgent(BaseAgent):
                         task_line += f" [Project: {task.get('project_name')}]"
                     context_str += task_line + "\n"
         
-        # Add available users information
-        users_str = ""
+        # Add available users information to context string
         if available_users:
-            users_str = f"\nAvailable Users/Team Members ({len(available_users)} total):\n"
+            context_str += f"\n\n📋 USERS ADDED BY COMPANY USER ({len(available_users)} total):\n"
+            context_str += "NOTE: You have READ-ONLY access to this user information. You can view and report on users, but you CANNOT create, update, or delete users.\n\n"
             for user in available_users:
-                users_str += f"- ID: {user.get('id', 'N/A')}, Username: {user.get('username', 'Unknown')}, Name: {user.get('name', user.get('username', 'Unknown'))}\n"
+                context_str += f"- ID: {user.get('id', 'N/A')}, Username: {user.get('username', 'Unknown')}, Name: {user.get('name', user.get('username', 'Unknown'))}\n"
                 if 'role' in user:
-                    users_str += f"  Role: {user.get('role')}\n"
+                    context_str += f"  Role: {user.get('role', 'team_member')}\n"
+                if 'email' in user:
+                    context_str += f"  Email: {user.get('email', 'N/A')}\n"
+                context_str += f"  Status: {'Active' if user.get('is_active', True) else 'Inactive'}\n"
+        
+        # Users information is already added to context_str above
+        users_str = ""
         
         # Add user-task assignments if available
         assignments_str = ""
@@ -145,14 +153,17 @@ Return a helpful text response (NOT JSON)."""
 Question: {question}
 
 IMPORTANT INSTRUCTIONS:
-- If the question asks about users and their task assignments, use the "USER-TASK ASSIGNMENTS" section above to provide detailed information
-- List all users and clearly show which tasks each user is assigned to, grouped by project
-- Be specific: include task titles, status, priority, and which project each task belongs to
-- If a user has no tasks assigned, mention that clearly
-- Provide a clear, organized answer that's easy to read
+- You have READ-ONLY access to user information. You can view and report on users, their roles, and their task assignments, but you CANNOT create, update, or delete users.
+- If the question asks about users (e.g., "how many users do I have", "what are their roles"), use the "USERS ADDED BY COMPANY USER" section above to provide detailed information.
+- List all users with their roles, email addresses, and status (active/inactive).
+- If the question asks about users and their task assignments, use the "USER-TASK ASSIGNMENTS" section above to provide detailed information.
+- List all users and clearly show which tasks each user is assigned to, grouped by project.
+- Be specific: include task titles, status, priority, and which project each task belongs to.
+- If a user has no tasks assigned, mention that clearly.
+- Provide a clear, organized answer that's easy to read.
 
 Provide a helpful, accurate answer. If the question is about specific data that isn't in the context, mention that.
-Be conversational and clear. If asked about available users and their assignments, provide detailed information from the assignments section above."""
+Be conversational and clear. If asked about available users and their assignments, provide detailed information from both the users section and the assignments section above."""
         
         try:
             max_tokens = 800

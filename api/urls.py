@@ -16,6 +16,9 @@ from api.views import analytics
 from api.views import notification
 from api.views import company
 from api.views import company_auth
+from api.views import company_users
+from api.views import user_tasks
+from api.views import company_user_tasks
 from api.views import career
 from api.views import applicant
 from api.views import quiz
@@ -47,6 +50,12 @@ urlpatterns = [
     re_path(r'^users/profile/?$', user.get_profile, name='get_profile'),  # GET
     re_path(r'^users/profile/update/?$', user.update_profile, name='update_profile'),  # PUT
     re_path(r'^users/dashboard/?$', user.get_dashboard_stats, name='get_dashboard_stats'),
+    
+    # User Tasks endpoints (for regular users to manage their tasks)
+    re_path(r'^user/tasks/?$', user_tasks.get_my_tasks, name='get_my_tasks'),  # GET
+    re_path(r'^user/projects/?$', user_tasks.get_my_projects, name='get_my_projects'),  # GET
+    re_path(r'^user/tasks/(?P<taskId>\d+)/status/?$', user_tasks.update_task_status, name='update_task_status'),  # PATCH
+    re_path(r'^user/tasks/(?P<taskId>\d+)/progress/?$', user_tasks.update_task_progress, name='update_task_progress'),  # PATCH
     
     # Project endpoints
     re_path(r'^projects/?$', project.list_projects, name='list_projects'),
@@ -115,6 +124,14 @@ urlpatterns = [
     re_path(r'^companies/create/?$', company.create_company, name='create_company'),  # POST
     re_path(r'^companies/(?P<companyId>\d+)/tokens/?$', company.get_company_tokens, name='get_company_tokens'),  # GET
     re_path(r'^companies/(?P<companyId>\d+)/tokens/generate/?$', company.generate_company_token, name='generate_company_token'),  # POST
+    
+    # Company User Management endpoints (for company users to manage regular users)
+    re_path(r'^company/users/create/?$', company_users.create_user, name='company_create_user'),  # POST
+    re_path(r'^company/users/?$', company_users.list_users, name='company_list_users'),  # GET
+    re_path(r'^company/users/(?P<userId>\d+)/?$', company_users.get_user, name='company_get_user'),  # GET
+    re_path(r'^company/users/(?P<userId>\d+)/update/?$', company_users.update_user, name='company_update_user'),  # PUT/PATCH
+    re_path(r'^company/users/(?P<userId>\d+)/delete/?$', company_users.delete_user, name='company_delete_user'),  # DELETE
+    re_path(r'^company/users/tasks/?$', company_user_tasks.get_all_users_tasks, name='company_get_all_users_tasks'),  # GET
     
     # Company Auth endpoints
     re_path(r'^company/verify-token/?$', company_auth.verify_registration_token, name='verify_registration_token'),
