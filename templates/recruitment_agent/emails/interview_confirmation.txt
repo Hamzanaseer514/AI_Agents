@@ -3,7 +3,7 @@ Dear {{ candidate_name }},
 Your interview has been confirmed!
 
 Interview Details:
-- Position: {{ job_role }}
+- Position: {{ job_title }}
 - Interview Type: {{ interview_type }}
 - Scheduled Date & Time: {{ selected_slot }}
 

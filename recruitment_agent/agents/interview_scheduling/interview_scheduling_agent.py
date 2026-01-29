@@ -379,13 +379,13 @@ class InterviewSchedulingAgent:
         print("📧 SENDING INTERVIEW INVITATION EMAIL")
         print("="*60)
         try:
-            # Clean job role for email subject (remove newlines, extra spaces, limit length)
-            clean_job_role = self._clean_email_header(str(interview.job_role))
-            # Limit subject length (email subjects should be max 78 chars recommended)
-            if len(clean_job_role) > 50:
-                clean_job_role = clean_job_role[:47] + "..."
+            # Use job title for subject and body (from job description or truncated job_role)
+            job_title = self._get_job_title_for_email(interview)
+            clean_job_title = self._clean_email_header(job_title)
+            if len(clean_job_title) > 50:
+                clean_job_title = clean_job_title[:47] + "..."
             
-            subject = f"Interview Invitation - {clean_job_role}"
+            subject = f"Interview Invitation - {clean_job_title}"
             
             # Generate slot selection URL with token
             from django.urls import reverse
@@ -398,10 +398,11 @@ class InterviewSchedulingAgent:
             except:
                 slot_selection_url = f"http://127.0.0.1:8000/recruitment/interview/select/{interview.confirmation_token}/"
             
-            # Prepare email context
+            # Prepare email context (job_title for display in templates)
             context = {
                 'candidate_name': interview.candidate_name,
                 'job_role': interview.job_role,
+                'job_title': job_title,
                 'interview_type': interview.interview_type,
                 'available_slots': available_slots,
                 'interview_id': interview.id,
@@ -749,12 +750,13 @@ class InterviewSchedulingAgent:
             from_email = self._clean_email_header(from_email_raw)
             email_backend = getattr(settings, 'EMAIL_BACKEND', 'Not configured')
             
-            # Clean job role for email subject
-            clean_job_role = self._clean_email_header(str(interview.job_role))
-            if len(clean_job_role) > 50:
-                clean_job_role = clean_job_role[:47] + "..."
+            # Use job title for subject and body
+            job_title = self._get_job_title_for_email(interview)
+            clean_job_title = self._clean_email_header(job_title)
+            if len(clean_job_title) > 50:
+                clean_job_title = clean_job_title[:47] + "..."
             
-            subject = f"Interview Confirmed - {clean_job_role}"
+            subject = f"Interview Confirmed - {clean_job_title}"
             
             print(f"✓ Interview ID: {interview.id}")
             print(f"✓ Candidate: {interview.candidate_name} ({interview.candidate_email})")
@@ -766,6 +768,7 @@ class InterviewSchedulingAgent:
             candidate_context = {
                 'candidate_name': interview.candidate_name,
                 'job_role': interview.job_role,
+                'job_title': job_title,
                 'interview_type': interview.interview_type,
                 'scheduled_datetime': interview.scheduled_datetime,
                 'selected_slot': interview.selected_slot,
@@ -828,15 +831,16 @@ class InterviewSchedulingAgent:
                     'candidate_name': interview.candidate_name,
                     'candidate_email': interview.candidate_email,
                     'job_role': interview.job_role,
+                    'job_title': job_title,
                     'interview_type': interview.interview_type,
                     'scheduled_datetime': interview.scheduled_datetime,
                 }
                 
-                # Clean job role for recruiter subject
-                clean_job_role = self._clean_email_header(str(interview.job_role))
-                if len(clean_job_role) > 40:
-                    clean_job_role = clean_job_role[:37] + "..."
-                recruiter_subject = f"Interview Scheduled - {interview.candidate_name} for {clean_job_role}"
+                # Use job title for recruiter subject
+                clean_recruiter_title = self._clean_email_header(job_title)
+                if len(clean_recruiter_title) > 40:
+                    clean_recruiter_title = clean_recruiter_title[:37] + "..."
+                recruiter_subject = f"Interview Scheduled - {interview.candidate_name} for {clean_recruiter_title}"
                 
                 try:
                     recruiter_message = render_to_string('recruitment_agent/emails/interview_confirmation_recruiter.txt', recruiter_context)
@@ -937,11 +941,12 @@ class InterviewSchedulingAgent:
                     "error": "Interview is in the past",
                 }
             
-            # Send reminder - clean job role for subject
-            clean_job_role = self._clean_email_header(str(interview.job_role))
-            if len(clean_job_role) > 50:
-                clean_job_role = clean_job_role[:47] + "..."
-            subject = f"Reminder: Please Confirm Your Interview - {clean_job_role}"
+            # Send reminder - use job title for subject
+            job_title = self._get_job_title_for_email(interview)
+            clean_job_title = self._clean_email_header(job_title)
+            if len(clean_job_title) > 50:
+                clean_job_title = clean_job_title[:47] + "..."
+            subject = f"Reminder: Please Confirm Your Interview - {clean_job_title}"
             
             # Generate slot selection URL with token
             from django.urls import reverse
@@ -957,6 +962,7 @@ class InterviewSchedulingAgent:
             context = {
                 'candidate_name': interview.candidate_name,
                 'job_role': interview.job_role,
+                'job_title': job_title,
                 'interview_type': interview.interview_type,
                 'available_slots': available_slots,
                 'interview_id': interview.id,
@@ -1097,19 +1103,21 @@ class InterviewSchedulingAgent:
                     "error": f"Not the right time to send reminder (should be {hours_before} hours before interview)",
                 }
             
-            # Send reminder - clean job role for subject
-            clean_job_role = self._clean_email_header(str(interview.job_role))
-            if len(clean_job_role) > 40:
-                clean_job_role = clean_job_role[:37] + "..."
+            # Send reminder - use job title for subject and body
+            job_title = self._get_job_title_for_email(interview)
+            clean_job_title = self._clean_email_header(job_title)
+            if len(clean_job_title) > 40:
+                clean_job_title = clean_job_title[:37] + "..."
             
             if hours_before == 24:
-                subject = f"Reminder: Interview Tomorrow - {clean_job_role}"
+                subject = f"Reminder: Interview Tomorrow - {clean_job_title}"
             else:
-                subject = f"Reminder: Interview in {hours_before} hours - {clean_job_role}"
+                subject = f"Reminder: Interview in {hours_before} hours - {clean_job_title}"
             
             context = {
                 'candidate_name': interview.candidate_name,
                 'job_role': interview.job_role,
+                'job_title': job_title,
                 'interview_type': interview.interview_type,
                 'scheduled_datetime': interview.scheduled_datetime,
                 'selected_slot': interview.selected_slot,
@@ -1237,6 +1245,17 @@ class InterviewSchedulingAgent:
     ) -> None:
         """Log an error"""
         self.log_service.log_error(event_name, metadata or {})
+
+    def _get_job_title_for_email(self, interview: Interview) -> str:
+        """Get job title for email display (from job description or truncated job_role)."""
+        if interview.cv_record and interview.cv_record.job_description:
+            title = (interview.cv_record.job_description.title or '').strip()
+            if title:
+                return title
+        if interview.job_role:
+            first_line = (interview.job_role.split('\n')[0] or interview.job_role).strip()
+            return self._clean_email_header(first_line)[:80] if first_line else 'the position'
+        return 'the position'
 
     def _clean_email_header(self, text: str) -> str:
         """

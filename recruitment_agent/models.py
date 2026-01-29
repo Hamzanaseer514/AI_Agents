@@ -128,6 +128,14 @@ class RecruiterInterviewSettings(models.Model):
         help_text="Time gap between interview slots in minutes (e.g., 30 for 30 minutes)"
     )
     
+    # Default interview type for this job (candidates get this in invitation email)
+    default_interview_type = models.CharField(
+        max_length=10,
+        choices=[('ONLINE', 'Online'), ('ONSITE', 'Onsite')],
+        default='ONLINE',
+        help_text='Interview type for this job. Sent to candidates in invitation email.'
+    )
+    
     # Generated time slots stored as JSON
     time_slots_json = models.JSONField(
         default=list,
@@ -255,6 +263,19 @@ class Interview(models.Model):
     
     # Interview details
     status = models.CharField(max_length=20, choices=INTERVIEW_STATUS_CHOICES, default='PENDING')
+    outcome = models.CharField(
+        max_length=30,
+        null=True,
+        blank=True,
+        help_text='Decision after interview (when status is COMPLETED)',
+        choices=[
+            ('', 'Not set'),
+            ('ONSITE_INTERVIEW', 'Onsite Interview'),
+            ('HIRED', 'Hired'),
+            ('PASSED', 'Passed'),
+            ('REJECTED', 'Rejected'),
+        ],
+    )
     scheduled_datetime = models.DateTimeField(null=True, blank=True)
     selected_slot = models.CharField(max_length=255, null=True, blank=True, help_text="The time slot selected by candidate")
     

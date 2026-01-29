@@ -194,12 +194,14 @@ urlpatterns = [
     # Recruitment Agent endpoints (Company User)
     re_path(r'^recruitment/process-cvs/?$', recruitment_agent.process_cvs, name='recruitment_process_cvs'),  # POST
     re_path(r'^recruitment/job-descriptions/?$', recruitment_agent.list_job_descriptions, name='recruitment_list_job_descriptions'),  # GET
+    re_path(r'^recruitment/job-descriptions/generate/?$', recruitment_agent.generate_job_description, name='recruitment_generate_job_description'),  # POST
     re_path(r'^recruitment/job-descriptions/create/?$', recruitment_agent.create_job_description, name='recruitment_create_job_description'),  # POST
     re_path(r'^recruitment/job-descriptions/(?P<job_description_id>\d+)/update/?$', recruitment_agent.update_job_description, name='recruitment_update_job_description'),  # PUT/PATCH
     re_path(r'^recruitment/job-descriptions/(?P<job_description_id>\d+)/delete/?$', recruitment_agent.delete_job_description, name='recruitment_delete_job_description'),  # DELETE
     re_path(r'^recruitment/interviews/?$', recruitment_agent.list_interviews, name='recruitment_list_interviews'),  # GET
     re_path(r'^recruitment/interviews/schedule/?$', recruitment_agent.schedule_interview, name='recruitment_schedule_interview'),  # POST
     re_path(r'^recruitment/interviews/(?P<interview_id>\d+)/?$', recruitment_agent.get_interview_details, name='recruitment_get_interview_details'),  # GET
+    re_path(r'^recruitment/interviews/(?P<interview_id>\d+)/update/?$', recruitment_agent.update_interview, name='recruitment_update_interview'),  # PATCH/PUT
     re_path(r'^recruitment/cv-records/?$', recruitment_agent.list_cv_records, name='recruitment_list_cv_records'),  # GET
     re_path(r'^recruitment/settings/email/?$', recruitment_agent.email_settings, name='recruitment_email_settings'),  # GET/POST
     re_path(r'^recruitment/settings/interview/?$', recruitment_agent.interview_settings, name='recruitment_interview_settings'),  # GET/POST

@@ -23,7 +23,7 @@
         <div class="content">
             <p>Dear {{ candidate_name }},</p>
             
-            <p>We wanted to follow up regarding your interview invitation for the <strong>{{ job_role }}</strong> position.</p>
+            <p>We wanted to follow up regarding your interview invitation for the <strong>{{ job_title }}</strong> position.</p>
             
             {% if followup_number > 1 %}
             <div class="urgent-box">
@@ -37,7 +37,7 @@
             
             <h3>Interview Details:</h3>
             <ul>
-                <li><strong>Position:</strong> {{ job_role }}</li>
+                <li><strong>Position:</strong> {{ job_title }}</li>
                 <li><strong>Interview Type:</strong> {{ interview_type }}</li>
             </ul>
             

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, Plus, Calendar, Mail, Phone, Clock } from 'lucide-react';
-import { getInterviews, scheduleInterview, getCVRecords } from '@/services/recruitmentAgentService';
+import { getInterviews, scheduleInterview, getCVRecords, updateInterview } from '@/services/recruitmentAgentService';
 
 const Interviews = ({ onUpdate }) => {
   const { toast } = useToast();
@@ -16,6 +16,7 @@ const Interviews = ({ onUpdate }) => {
   const [loading, setLoading] = useState(true);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [decisionFilter, setDecisionFilter] = useState('');
   const [formData, setFormData] = useState({
     candidate_name: '',
     candidate_email: '',
@@ -26,16 +27,20 @@ const Interviews = ({ onUpdate }) => {
   });
   const [cvRecords, setCvRecords] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [updatingId, setUpdatingId] = useState(null);
 
   useEffect(() => {
     fetchInterviews();
     fetchCVRecords();
-  }, [statusFilter]);
+  }, [statusFilter, decisionFilter]);
 
   const fetchInterviews = async () => {
     try {
       setLoading(true);
-      const response = await getInterviews(statusFilter ? { status: statusFilter } : {});
+      const filters = {};
+      if (statusFilter) filters.status = statusFilter;
+      if (decisionFilter !== '') filters.outcome = decisionFilter;
+      const response = await getInterviews(filters);
       if (response.status === 'success') {
         setInterviews(response.data || []);
       }
@@ -122,6 +127,63 @@ const Interviews = ({ onUpdate }) => {
     return <Badge className={variants[status] || 'bg-gray-500'}>{status}</Badge>;
   };
 
+  const getOutcomeBadge = (outcome) => {
+    if (!outcome) return null;
+    const variants = {
+      ONSITE_INTERVIEW: 'bg-indigo-500',
+      HIRED: 'bg-emerald-600',
+      PASSED: 'bg-teal-500',
+      REJECTED: 'bg-red-600',
+    };
+    const labels = {
+      ONSITE_INTERVIEW: 'Onsite Interview',
+      HIRED: 'Hired',
+      PASSED: 'Passed',
+      REJECTED: 'Rejected',
+    };
+    return <Badge className={variants[outcome] || 'bg-gray-500'}>{labels[outcome] || outcome}</Badge>;
+  };
+
+  const handleStatusChange = async (interviewId, newStatus) => {
+    try {
+      setUpdatingId(interviewId);
+      const response = await updateInterview(interviewId, { status: newStatus });
+      if (response.status === 'success') {
+        toast({ title: 'Updated', description: 'Interview status updated' });
+        fetchInterviews();
+        if (onUpdate) onUpdate();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update status',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleOutcomeChange = async (interviewId, newOutcome) => {
+    try {
+      setUpdatingId(interviewId);
+      const response = await updateInterview(interviewId, { outcome: newOutcome || '' });
+      if (response.status === 'success') {
+        toast({ title: 'Updated', description: 'Interview outcome updated' });
+        fetchInterviews();
+        if (onUpdate) onUpdate();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update outcome',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -152,6 +214,19 @@ const Interviews = ({ onUpdate }) => {
               <SelectItem value="CANCELLED">Cancelled</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={decisionFilter === '' ? "all" : decisionFilter} onValueChange={(value) => setDecisionFilter(value === "all" ? "" : value)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by decision" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Decisions</SelectItem>
+              <SelectItem value="NOT_SET">Not set</SelectItem>
+              <SelectItem value="ONSITE_INTERVIEW">Onsite Interview</SelectItem>
+              <SelectItem value="HIRED">Hired</SelectItem>
+              <SelectItem value="PASSED">Passed</SelectItem>
+              <SelectItem value="REJECTED">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={() => setShowScheduleModal(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Schedule Interview
@@ -178,17 +253,20 @@ const Interviews = ({ onUpdate }) => {
           {interviews.map((interview) => (
             <Card key={interview.id}>
               <CardHeader>
-                <div className="flex justify-between items-start">
+                <div className="flex justify-between items-start flex-wrap gap-2">
                   <div>
                     <CardTitle className="text-lg">{interview.candidate_name}</CardTitle>
                     <CardDescription className="mt-1">
                       {interview.job_title || interview.job_role}
                     </CardDescription>
                   </div>
-                  {getStatusBadge(interview.status)}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {getStatusBadge(interview.status)}
+                    {interview.outcome && getOutcomeBadge(interview.outcome)}
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm">
@@ -220,6 +298,52 @@ const Interviews = ({ onUpdate }) => {
                       </div>
                     )}
                   </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 pt-4 border-t">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm font-medium text-muted-foreground">Status</Label>
+                    <Select
+                      value={interview.status}
+                      onValueChange={(value) => handleStatusChange(interview.id, value)}
+                      disabled={updatingId === interview.id}
+                    >
+                      <SelectTrigger className="w-[160px] h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PENDING">Pending</SelectItem>
+                        <SelectItem value="SCHEDULED">Scheduled</SelectItem>
+                        <SelectItem value="COMPLETED">Completed</SelectItem>
+                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                        <SelectItem value="RESCHEDULED">Rescheduled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {updatingId === interview.id && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  {(interview.status === 'COMPLETED' || interview.outcome) && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-medium text-muted-foreground">Decision</Label>
+                      <Select
+                        value={interview.outcome || 'none'}
+                        onValueChange={(value) => handleOutcomeChange(interview.id, value === 'none' ? '' : value)}
+                        disabled={updatingId === interview.id}
+                      >
+                        <SelectTrigger className="w-[180px] h-9">
+                          <SelectValue placeholder="Set outcome" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Not set</SelectItem>
+                          <SelectItem value="ONSITE_INTERVIEW">Onsite Interview</SelectItem>
+                          <SelectItem value="HIRED">Hired</SelectItem>
+                          <SelectItem value="PASSED">Passed</SelectItem>
+                          <SelectItem value="REJECTED">Rejected</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
