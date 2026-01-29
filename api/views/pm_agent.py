@@ -1063,6 +1063,66 @@ def knowledge_qa(request):
         
         all_projects = Project.objects.filter(created_by_company_user=company_user)
         all_tasks = Task.objects.filter(project__created_by_company_user=company_user).select_related("project", "assignee")
+        
+        # Get all users created by this company user
+        from core.models import UserProfile
+        created_user_profiles = UserProfile.objects.filter(
+            created_by_company_user=company_user
+        ).select_related('user')
+        
+        # Build available users list with their roles
+        available_users = []
+        for profile in created_user_profiles:
+            user = profile.user
+            available_users.append({
+                'id': user.id,
+                'username': user.username,
+                'name': user.get_full_name() or user.username,
+                'email': user.email,
+                'role': profile.role or 'team_member',
+                'is_active': user.is_active,
+            })
+        
+        # Build user-task assignments information
+        user_assignments = []
+        for user_info in available_users:
+            user_id = user_info['id']
+            # Get tasks for this user
+            if project_id:
+                user_tasks = Task.objects.filter(
+                    project_id=project_id, 
+                    assignee_id=user_id,
+                    project__created_by_company_user=company_user
+                )
+            else:
+                user_tasks = all_tasks.filter(assignee_id=user_id)
+            
+            tasks_by_project = {}
+            for task in user_tasks:
+                project_name = task.project.name
+                task_project_id = task.project.id
+                if task_project_id not in tasks_by_project:
+                    tasks_by_project[task_project_id] = {
+                        'project_id': task_project_id,
+                        'project_name': project_name,
+                        'tasks': []
+                    }
+                tasks_by_project[task_project_id]['tasks'].append({
+                    'id': task.id,
+                    'title': task.title,
+                    'status': task.status,
+                    'priority': task.priority
+                })
+            
+            user_assignments.append({
+                'user_id': user_id,
+                'username': user_info['username'],
+                'name': user_info.get('name', user_info['username']),
+                'role': user_info.get('role', 'team_member'),
+                'email': user_info.get('email', ''),
+                'total_tasks': user_tasks.count(),
+                'projects': list(tasks_by_project.values())
+            })
 
         if project_id:
             project = get_object_or_404(Project, id=project_id, created_by_company_user=company_user)
@@ -1098,6 +1158,7 @@ def knowledge_qa(request):
                     }
                     for p in all_projects
                 ],
+                "user_assignments": user_assignments,
             }
         else:
             context = {
@@ -1125,10 +1186,11 @@ def knowledge_qa(request):
                     }
                     for t in all_tasks[:50]
                 ],
+                "user_assignments": user_assignments,
             }
 
         agent = AgentRegistry.get_agent("knowledge_qa")
-        result = agent.process(question=question, context=context)
+        result = agent.process(question=question, context=context, available_users=available_users)
 
         return Response({"status": "success", "data": result}, status=status.HTTP_200_OK)
 

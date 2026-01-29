@@ -15,11 +15,13 @@ import { useToast } from '@/components/ui/use-toast';
 import { companyJobsService } from '@/services';
 import { companyApi } from '@/services/companyAuthService';
 import { getPurchasedModules } from '@/services/modulePurchaseService';
+import companyUserManagementService from '@/services/companyUserManagementService';
 import DashboardNavbar from '@/components/common/DashboardNavbar';
 import { 
   Building2, Plus, Briefcase, Users, Eye, 
   Loader2, Search, Calendar, MapPin, Clock, Download, BrainCircuit, FolderKanban,
-  ChevronDown, ChevronRight, ListTodo, UserCheck, Megaphone
+  ChevronDown, ChevronRight, ListTodo, UserCheck, Megaphone, UserPlus, Edit, Trash2, Mail,
+  CheckCircle2, Circle, PlayCircle, AlertCircle, FileCheck, TrendingUp, User
 } from 'lucide-react';
 
 const CompanyDashboardPage = () => {
@@ -40,6 +42,29 @@ const CompanyDashboardPage = () => {
   const [expandedProjects, setExpandedProjects] = useState(new Set());
   const [expandedTasks, setExpandedTasks] = useState(new Set());
   const [purchasedModules, setPurchasedModules] = useState([]);
+  
+  // User management state
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userForm, setUserForm] = useState({
+    email: '',
+    password: '',
+    username: '',
+    fullName: '',
+    role: 'team_member',
+    phoneNumber: '',
+    bio: '',
+    location: '',
+  });
+  
+  // All users tasks state
+  const [allUsersTasks, setAllUsersTasks] = useState([]);
+  const [allUsersTasksLoading, setAllUsersTasksLoading] = useState(false);
+  const [taskStatusFilter, setTaskStatusFilter] = useState('all');
+  const [taskUserFilter, setTaskUserFilter] = useState('all');
 
   const [jobForm, setJobForm] = useState({
     title: '',
@@ -281,7 +306,167 @@ const CompanyDashboardPage = () => {
     if (activeTab === 'projects' && companyUser) {
       fetchProjects();
     }
-  }, [activeTab, companyUser]);
+    if (activeTab === 'users' && companyUser) {
+      fetchUsers();
+    }
+    if (activeTab === 'all-tasks' && companyUser) {
+      fetchAllUsersTasks();
+    }
+  }, [activeTab, companyUser, taskStatusFilter, taskUserFilter]);
+  
+  const fetchAllUsersTasks = async () => {
+    try {
+      setAllUsersTasksLoading(true);
+      const params = {};
+      if (taskStatusFilter !== 'all') {
+        params.status = taskStatusFilter;
+      }
+      if (taskUserFilter !== 'all') {
+        params.user_id = taskUserFilter;
+      }
+      
+      const queryParams = new URLSearchParams(params);
+      const queryString = queryParams.toString();
+      const endpoint = `/company/users/tasks${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await companyApi.get(endpoint);
+      if (response.status === 'success') {
+        setAllUsersTasks(response.data || []);
+      } else {
+        throw new Error(response.message || 'Failed to load tasks');
+      }
+    } catch (error) {
+      console.error('Error fetching all users tasks:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load tasks',
+        variant: 'destructive',
+      });
+      setAllUsersTasks([]);
+    } finally {
+      setAllUsersTasksLoading(false);
+    }
+  };
+  
+  const fetchUsers = async () => {
+    try {
+      setUsersLoading(true);
+      const response = await companyUserManagementService.listUsers({ page: 1, limit: 50 });
+      if (response.status === 'success') {
+        setUsers(response.data || []);
+      } else {
+        throw new Error(response.message || 'Failed to load users');
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load users',
+        variant: 'destructive',
+      });
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+  
+  const handleCreateUser = async () => {
+    try {
+      if (!userForm.email || !userForm.password) {
+        toast({
+          title: 'Validation Error',
+          description: 'Email and password are required',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      const response = await companyUserManagementService.createUser(userForm);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'User created successfully',
+        });
+        setShowCreateUserModal(false);
+        setUserForm({
+          email: '', password: '', username: '', fullName: '', role: 'team_member',
+          phoneNumber: '', bio: '', location: '',
+        });
+        fetchUsers();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create user',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleEditUser = (user) => {
+    setEditingUser(user);
+    setUserForm({
+      email: user.email || '',
+      password: '', // Don't pre-fill password
+      username: user.username || '',
+      fullName: user.full_name || '',
+      role: user.role || 'team_member',
+      phoneNumber: user.phone_number || '',
+      bio: user.bio || '',
+      location: user.location || '',
+    });
+    setShowCreateUserModal(true);
+  };
+  
+  const handleUpdateUser = async () => {
+    try {
+      if (!editingUser) return;
+      
+      const response = await companyUserManagementService.updateUser(editingUser.id, userForm);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'User updated successfully',
+        });
+        setShowCreateUserModal(false);
+        setEditingUser(null);
+        setUserForm({
+          email: '', password: '', username: '', fullName: '', role: 'team_member',
+          phoneNumber: '', bio: '', location: '',
+        });
+        fetchUsers();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update user',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to deactivate this user?')) {
+      return;
+    }
+    
+    try {
+      const response = await companyUserManagementService.deleteUser(userId);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'User deactivated successfully',
+        });
+        fetchUsers();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to deactivate user',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const toggleProject = (projectId) => {
     setExpandedProjects(prev => {
@@ -343,6 +528,43 @@ const CompanyDashboardPage = () => {
         return 'bg-green-100 text-green-800';
       case 'rejected':
         return 'bg-red-100 text-red-800';
+      // Task statuses
+      case 'done':
+        return 'bg-green-100 text-green-800';
+      case 'in_progress':
+        return 'bg-blue-100 text-blue-800';
+      case 'review':
+        return 'bg-purple-100 text-purple-800';
+      case 'blocked':
+        return 'bg-red-100 text-red-800';
+      case 'todo':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'done':
+        return <CheckCircle2 className="h-4 w-4 text-green-600" />;
+      case 'in_progress':
+        return <PlayCircle className="h-4 w-4 text-blue-600" />;
+      case 'review':
+        return <FileCheck className="h-4 w-4 text-purple-600" />;
+      case 'blocked':
+        return <AlertCircle className="h-4 w-4 text-red-600" />;
+      default:
+        return <Circle className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case 'high':
+        return 'bg-red-100 text-red-800';
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -416,11 +638,32 @@ const CompanyDashboardPage = () => {
                   <Users className="h-4 w-4 mr-2" />
                   Applications
                 </TabsTrigger>
+                <TabsTrigger value="users">
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  Users
+                </TabsTrigger>
+                <TabsTrigger value="all-tasks">
+                  <ListTodo className="h-4 w-4 mr-2" />
+                  All Users Tasks
+                </TabsTrigger>
               </TabsList>
               {activeTab === 'jobs' && (
                 <Button onClick={() => setShowCreateJobModal(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Post New Job
+                </Button>
+              )}
+              {activeTab === 'users' && (
+                <Button onClick={() => {
+                  setEditingUser(null);
+                  setUserForm({
+                    email: '', password: '', username: '', fullName: '', role: 'team_member',
+                    phoneNumber: '', bio: '', location: '',
+                  });
+                  setShowCreateUserModal(true);
+                }}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add User
                 </Button>
               )}
             </div>
@@ -728,8 +971,262 @@ const CompanyDashboardPage = () => {
                 </Card>
               )}
             </TabsContent>
+            
+            <TabsContent value="users" className="space-y-4">
+              {/* Search Bar */}
+              {users.length > 0 && (
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search users by name, email, or role..."
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {usersLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : users.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <UserCheck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium mb-2">No users yet</p>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Add users to your company to manage projects and tasks
+                    </p>
+                    <Button onClick={() => {
+                      setEditingUser(null);
+                      setUserForm({
+                        email: '', password: '', username: '', fullName: '', role: 'team_member',
+                        phoneNumber: '', bio: '', location: '',
+                      });
+                      setShowCreateUserModal(true);
+                    }}>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Add Your First User
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (() => {
+                // Filter users based on search query
+                const filteredUsers = users.filter(user => {
+                  if (!userSearchQuery) return true;
+                  const query = userSearchQuery.toLowerCase();
+                  return (
+                    (user.full_name && user.full_name.toLowerCase().includes(query)) ||
+                    (user.username && user.username.toLowerCase().includes(query)) ||
+                    (user.email && user.email.toLowerCase().includes(query)) ||
+                    (user.role && user.role.toLowerCase().includes(query))
+                  );
+                });
+                
+                if (filteredUsers.length === 0) {
+                  return (
+                    <Card>
+                      <CardContent className="py-12 text-center">
+                        <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                        <p className="text-lg font-medium mb-2">No users found</p>
+                        <p className="text-sm text-muted-foreground">
+                          Try adjusting your search query
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="grid gap-4">
+                      {filteredUsers.map((user) => (
+                        <Card key={user.id} className="hover:shadow-md transition-shadow">
+                          <CardHeader>
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <CardTitle className="text-lg">{user.full_name || user.username}</CardTitle>
+                                  {user.is_active === false && (
+                                    <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Mail className="h-4 w-4" />
+                                    {user.email}
+                                  </span>
+                                  <Badge variant="outline" className="capitalize">
+                                    {user.role?.replace('_', ' ')}
+                                  </Badge>
+                                  {user.location && (
+                                    <span className="flex items-center gap-1">
+                                      <MapPin className="h-4 w-4" />
+                                      {user.location}
+                                    </span>
+                                  )}
+                                  {user.phone_number && (
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-4 w-4" />
+                                      {user.phone_number}
+                                    </span>
+                                  )}
+                                </div>
+                                {user.created_by_company_user_name && (
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    Created by: <span className="font-medium">{user.created_by_company_user_name}</span>
+                                  </p>
+                                )}
+                                {user.date_joined && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Joined: {new Date(user.date_joined).toLocaleDateString()}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex gap-2 ml-4">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditUser(user)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardHeader>
+                          {user.bio && (
+                            <CardContent>
+                              <p className="text-sm text-muted-foreground line-clamp-2">{user.bio}</p>
+                            </CardContent>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </TabsContent>
+
+            <TabsContent value="all-tasks" className="space-y-4">
+              {/* Filters */}
+              <div className="flex items-center gap-4">
+                <Select value={taskStatusFilter} onValueChange={setTaskStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="todo">To Do</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="review">Review</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <Select value={taskUserFilter} onValueChange={setTaskUserFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Users</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.full_name || user.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {allUsersTasksLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : allUsersTasks.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <ListTodo className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium mb-2">No tasks found</p>
+                    <p className="text-sm text-muted-foreground">
+                      {taskStatusFilter !== 'all' || taskUserFilter !== 'all'
+                        ? 'No tasks match the selected filters'
+                        : 'No tasks have been assigned to your users yet'}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {allUsersTasks.map((task) => (
+                    <Card key={task.id} className="hover:shadow-md transition-shadow">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg mb-2">{task.title}</CardTitle>
+                            {task.description && (
+                              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                                {task.description}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <Badge className={getStatusColor(task.status)}>
+                                {getStatusIcon(task.status)}
+                                <span className="ml-1 capitalize">{task.status.replace('_', ' ')}</span>
+                              </Badge>
+                              <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                                {task.priority} Priority
+                              </Badge>
+                              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                <FolderKanban className="h-4 w-4" />
+                                {task.project_name}
+                              </span>
+                              {task.assignee_name && (
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <User className="h-4 w-4" />
+                                  {task.assignee_name}
+                                </span>
+                              )}
+                              {task.due_date && (
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="h-4 w-4" />
+                                  {new Date(task.due_date).toLocaleDateString()}
+                                </span>
+                              )}
+                              {task.progress_percentage !== null && (
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <TrendingUp className="h-4 w-4" />
+                                  {task.progress_percentage}% complete
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
-          )}
+        )}
 
           {activeSection === 'project-manager' && (
             <div className="text-center py-12">
@@ -822,6 +1319,161 @@ const CompanyDashboardPage = () => {
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateJobModal(false)}>
                   Cancel
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+        
+        {/* Create/Edit User Modal */}
+        <Dialog open={showCreateUserModal} onOpenChange={(open) => {
+          setShowCreateUserModal(open);
+          if (!open) {
+            setEditingUser(null);
+            setUserForm({
+              email: '', password: '', username: '', fullName: '', role: 'team_member',
+              phoneNumber: '', bio: '', location: '',
+            });
+          }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (editingUser) {
+                handleUpdateUser();
+              } else {
+                handleCreateUser();
+              }
+            }} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                    required
+                    disabled={!!editingUser}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={userForm.username}
+                    onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+                    placeholder="Auto-generated from email if not provided"
+                  />
+                </div>
+              </div>
+              
+              {!editingUser && (
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    required
+                    minLength={6}
+                  />
+                </div>
+              )}
+              
+              {editingUser && (
+                <div className="space-y-2">
+                  <Label htmlFor="password">New Password (leave blank to keep current)</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    minLength={6}
+                  />
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    value={userForm.fullName}
+                    onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role *</Label>
+                  <Select
+                    value={userForm.role}
+                    onValueChange={(value) => setUserForm({ ...userForm, role: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="project_manager">Project Manager</SelectItem>
+                      <SelectItem value="team_member">Team Member</SelectItem>
+                      <SelectItem value="developer">Developer</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                      <SelectItem value="internee">Internee</SelectItem>
+                      <SelectItem value="designer">Designer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Input
+                    id="phoneNumber"
+                    value={userForm.phoneNumber}
+                    onChange={(e) => setUserForm({ ...userForm, phoneNumber: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="location">Location</Label>
+                  <Input
+                    id="location"
+                    value={userForm.location}
+                    onChange={(e) => setUserForm({ ...userForm, location: e.target.value })}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="bio">Bio</Label>
+                <Textarea
+                  id="bio"
+                  value={userForm.bio}
+                  onChange={(e) => setUserForm({ ...userForm, bio: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowCreateUserModal(false);
+                    setEditingUser(null);
+                    setUserForm({
+                      email: '', password: '', username: '', fullName: '', role: 'team_member',
+                      phoneNumber: '', bio: '', location: '',
+                    });
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  {editingUser ? 'Update User' : 'Create User'}
                 </Button>
               </div>
             </form>

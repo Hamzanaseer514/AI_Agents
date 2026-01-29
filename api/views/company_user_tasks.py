@@ -1,0 +1,82 @@
+"""
+Company User Tasks API Views
+For company users to view all tasks of all users they created
+"""
+
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
+
+from api.authentication import CompanyUserTokenAuthentication
+from api.permissions import IsCompanyUserOnly
+from core.models import Task, UserProfile
+from api.serializers.user_tasks import TaskSerializer
+
+
+@api_view(['GET'])
+@authentication_classes([CompanyUserTokenAuthentication])
+@permission_classes([IsCompanyUserOnly])
+def get_all_users_tasks(request):
+    """
+    Get all tasks of all users created by the company user
+    GET /api/company/users/tasks
+    """
+    try:
+        # request.user is a CompanyUser instance when authenticated via CompanyUserTokenAuthentication
+        company_user = request.user
+        
+        # Get all users created by this company user
+        created_user_profiles = UserProfile.objects.filter(
+            created_by_company_user=company_user
+        ).select_related('user')
+        
+        created_user_ids = list(created_user_profiles.values_list('user_id', flat=True))
+        
+        # If no users created, return empty list
+        if not created_user_ids:
+            return Response({
+                'status': 'success',
+                'data': []
+            }, status=status.HTTP_200_OK)
+        
+        # Get all tasks assigned to these users
+        tasks = Task.objects.filter(
+            assignee_id__in=created_user_ids
+        ).select_related('project', 'assignee').order_by('-created_at')
+        
+        # Filter by status if provided
+        status_filter = request.GET.get('status')
+        if status_filter:
+            tasks = tasks.filter(status=status_filter)
+        
+        # Filter by user if provided
+        user_id = request.GET.get('user_id')
+        if user_id:
+            tasks = tasks.filter(assignee_id=user_id)
+        
+        # Filter by project if provided
+        project_id = request.GET.get('project_id')
+        if project_id:
+            tasks = tasks.filter(project_id=project_id)
+        
+        serializer = TaskSerializer(tasks, many=True)
+        
+        return Response({
+            'status': 'success',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    except Exception as e:
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in get_all_users_tasks: {str(e)}")
+        logger.error(traceback.format_exc())
+        return Response({
+            'status': 'error',
+            'message': 'Failed to fetch tasks',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
