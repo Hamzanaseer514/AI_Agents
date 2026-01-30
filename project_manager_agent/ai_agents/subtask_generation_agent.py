@@ -4,6 +4,7 @@ Generates detailed subtasks for tasks to help users understand what they need to
 """
 
 from .base_agent import BaseAgent
+from .enhancements.subtask_generation_enhancements import SubtaskGenerationEnhancements
 from typing import List, Dict, Optional
 import json
 
@@ -35,6 +36,25 @@ class SubtaskGenerationAgent(BaseAgent):
         """
         self.log_action("Generating subtasks", {"task_id": task.get('id'), "task_title": task.get('title')})
         
+        # Enhanced: Determine optimal granularity
+        optimal_count = SubtaskGenerationEnhancements.determine_optimal_granularity(task)
+        
+        # Enhanced: Get domain template
+        project_type = task.get('project_type') or task.get('project', {}).get('project_type')
+        domain_template = SubtaskGenerationEnhancements.get_domain_template(
+            task.get('description', '') + ' ' + task.get('title', ''),
+            project_type
+        )
+        
+        domain_guidance = ""
+        if domain_template:
+            domain_guidance = f"""
+DOMAIN-SPECIFIC GUIDANCE:
+This task appears to be in the {domain_template.get('phases', [])} domain.
+Consider these common phases: {', '.join(domain_template.get('phases', []))}
+Common subtask patterns: {', '.join(domain_template.get('common_subtasks', [])[:5])}
+"""
+        
         prompt = f"""You are an expert at breaking down tasks into detailed, actionable subtasks with comprehensive descriptions.
 
 Task Information:
@@ -42,8 +62,10 @@ Task Information:
 - Description: {task.get('description', 'No description')}
 - Status: {task.get('status', 'todo')}
 - Priority: {task.get('priority', 'medium')}
+- Estimated Hours: {task.get('estimated_hours', 'Not specified')}
+{domain_guidance}
 
-Your goal is to break down this task into 4-8 detailed, actionable subtasks that help someone understand exactly what they need to do to complete this task efficiently.
+Your goal is to break down this task into {optimal_count} detailed, actionable subtasks that help someone understand exactly what they need to do to complete this task efficiently.
 
 CRITICAL REQUIREMENTS for subtask descriptions:
 Each subtask description must be COMPREHENSIVE (4-5 sentences) and include:
@@ -122,11 +144,29 @@ Rules:
             if isinstance(parsed_data, dict):
                 subtasks_data = parsed_data.get('subtasks', [])
                 task_reasoning = parsed_data.get('task_reasoning', '')
-                # Store reasoning in the return dict for later use
-                return {
-                    'subtasks': subtasks_data,
-                    'task_reasoning': task_reasoning
-                }
+                
+                # Enhanced: Add quality gates and dependency analysis
+                try:
+                    # Add quality gates
+                    subtasks_data = SubtaskGenerationEnhancements.add_quality_gates(subtasks_data)
+                    
+                    # Identify dependencies
+                    dependency_analysis = SubtaskGenerationEnhancements.identify_subtask_dependencies(subtasks_data)
+                    
+                    # Store reasoning in the return dict for later use
+                    return {
+                        'subtasks': subtasks_data,
+                        'task_reasoning': task_reasoning,
+                        'dependency_analysis': dependency_analysis,
+                        'optimal_count': optimal_count,
+                    }
+                except Exception as e:
+                    self.log_action("Error enhancing subtasks", {"error": str(e)})
+                    # Return without enhancements if error
+                    return {
+                        'subtasks': subtasks_data,
+                        'task_reasoning': task_reasoning
+                    }
             elif isinstance(parsed_data, list):
                 # Old format - just return the list
                 return parsed_data

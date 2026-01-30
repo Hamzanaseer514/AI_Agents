@@ -4,6 +4,8 @@ Handles all action requests like creating projects, tasks, and managing project 
 """
 
 from .base_agent import BaseAgent
+from .enhancements.project_pilot_enhancements import ProjectPilotEnhancements
+from .context_manager import ContextManager
 from typing import Dict, Optional, List
 import json
 import re
@@ -53,6 +55,34 @@ class ProjectPilotAgent(BaseAgent):
             Dict: Actions to perform in structured format
         """
         self.log_action("Handling action request", {"question": question[:50]})
+        
+        # Enhanced: Check for similar projects if creating new project
+        if context:
+            # Try to get user ID from context
+            user_id = None
+            if 'user_id' in context:
+                user_id = context['user_id']
+            elif 'project' in context and 'owner_id' in context['project']:
+                user_id = context['project']['owner_id']
+            elif 'all_projects' in context and len(context['all_projects']) > 0:
+                user_id = context['all_projects'][0].get('owner_id')
+            
+            # Check if this is a project creation request
+            question_lower = question.lower()
+            is_project_creation = any(phrase in question_lower for phrase in [
+                'create', 'make', 'build', 'develop', 'design', 'new project'
+            ]) and 'project' in question_lower
+            
+            if is_project_creation and user_id:
+                try:
+                    similar_projects = ProjectPilotEnhancements.analyze_similar_projects(
+                        question, user_id, limit=3
+                    )
+                    if similar_projects:
+                        context['similar_projects'] = similar_projects
+                        self.log_action("Found similar projects", {"count": len(similar_projects)})
+                except Exception as e:
+                    self.log_action("Error finding similar projects", {"error": str(e)})
         
         question_lower = question.lower()
         
@@ -663,6 +693,28 @@ CRITICAL RULES:
   * Backend API design
   * Frontend UI (if applicable)
   * Testing and deployment
+
+PRIORITY ASSIGNMENT (MANDATORY FOR ALL TASKS):
+You MUST analyze each task's importance to the project and assign appropriate priority:
+- HIGH priority: 
+  * Foundation/infrastructure tasks (database design, authentication, core APIs)
+  * Tasks that block other tasks (dependencies)
+  * Critical user-facing features that are core to the project
+  * Security and data integrity tasks
+  * Tasks on the critical path to project completion
+- MEDIUM priority:
+  * Important features that don't block others
+  * Supporting functionality and integrations
+  * UI/UX improvements
+  * Secondary features that enhance the system
+- LOW priority:
+  * Nice-to-have features
+  * Optional enhancements
+  * Non-critical optimizations
+  * Tasks that can be done later without impacting core functionality
+  * Polish and refinement tasks
+
+Think carefully about each task: Is it foundational? Does it block others? Is it critical for the project to function? Assign priority accordingly.
 - For each task's "task_description" field, provide COMPREHENSIVE description (4-6 sentences) covering:
   * WHAT the task is - clear explanation
   * HOW to do it - step-by-step methodology
@@ -726,7 +778,7 @@ Return ONLY this JSON format (no other text):
         "task_description": "COMPREHENSIVE task description (4-6 sentences) that includes: (1) WHAT the task is - clear explanation of what needs to be accomplished, (2) HOW to do it - step-by-step approach and methodology, (3) WHICH TOOLS to use - specific technologies, frameworks, libraries, and tools recommended, (4) MOST EFFICIENT WAY - best practices and efficient approaches to complete this task, including any shortcuts or optimizations. Make it actionable and detailed enough that a developer can understand exactly what to build and how to approach it.",
         "project_id": {target_project_id},
         "assignee_id": user_id_or_null,
-        "priority": "medium",
+        "priority": "high|medium|low",
         "status": "todo",
         "reasoning": "DETAILED AI reasoning and judgment (5-7 sentences) that includes: (1) WHY this task is important for the overall project and how it contributes to project completion, (2) TASK BREAKDOWN - logical decomposition of the task into manageable components, (3) EFFICIENCY ANALYSIS - reasoning about the most efficient approach considering dependencies, resources, and project timeline, (4) TECHNICAL DECISIONS - explanation of technology choices and why they're optimal for this specific task, (5) RISK ASSESSMENT - potential challenges and how to mitigate them, (6) BEST PRACTICES - industry standards and patterns to follow, (7) COMPLETION STRATEGY - recommended order and approach to ensure this task is completed most efficiently. Provide strategic thinking that helps ensure the project can be completed efficiently."
     }}
@@ -814,7 +866,7 @@ Return ONLY this JSON format (no other text):
         "task_description": "COMPREHENSIVE task description (4-6 sentences) that includes: (1) WHAT the task is - clear explanation of what needs to be accomplished, (2) HOW to do it - step-by-step approach and methodology, (3) WHICH TOOLS to use - specific technologies, frameworks, libraries, and tools recommended, (4) MOST EFFICIENT WAY - best practices and efficient approaches to complete this task, including any shortcuts or optimizations. Make it actionable and detailed enough that a developer can understand exactly what to build and how to approach it.",
         "project_id": null,
         "assignee_id": user_id_or_null,
-        "priority": "medium",
+        "priority": "high|medium|low",
         "status": "todo",
         "reasoning": "DETAILED AI reasoning and judgment (5-7 sentences) that includes: (1) WHY this task is important for the overall project and how it contributes to project completion, (2) TASK BREAKDOWN - logical decomposition of the task into manageable components, (3) EFFICIENCY ANALYSIS - reasoning about the most efficient approach considering dependencies, resources, and project timeline, (4) TECHNICAL DECISIONS - explanation of technology choices and why they're optimal for this specific task, (5) RISK ASSESSMENT - potential challenges and how to mitigate them, (6) BEST PRACTICES - industry standards and patterns to follow, (7) COMPLETION STRATEGY - recommended order and approach to ensure this task is completed most efficiently."
     }}
@@ -825,6 +877,28 @@ CRITICAL RULES:
 - NEVER include update_task actions - this is a NEW project creation
 - Create 10-20 tasks covering ALL features/modules/services mentioned
 - Break down each major component into separate tasks
+
+PRIORITY ASSIGNMENT (MANDATORY FOR ALL TASKS):
+You MUST analyze each task's importance to the project and assign appropriate priority:
+- HIGH priority: 
+  * Foundation/infrastructure tasks (database design, authentication, core APIs)
+  * Tasks that block other tasks (dependencies)
+  * Critical user-facing features that are core to the project
+  * Security and data integrity tasks
+  * Tasks on the critical path to project completion
+- MEDIUM priority:
+  * Important features that don't block others
+  * Supporting functionality and integrations
+  * UI/UX improvements
+  * Secondary features that enhance the system
+- LOW priority:
+  * Nice-to-have features
+  * Optional enhancements
+  * Non-critical optimizations
+  * Tasks that can be done later without impacting core functionality
+  * Polish and refinement tasks
+
+Think carefully about each task: Is it foundational? Does it block others? Is it critical for the project to function? Assign priority accordingly.
 - For each task's "task_description" field, provide COMPREHENSIVE description (4-6 sentences) covering:
   * WHAT the task is - clear explanation
   * HOW to do it - step-by-step methodology

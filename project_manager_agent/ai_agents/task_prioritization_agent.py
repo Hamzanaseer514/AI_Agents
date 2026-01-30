@@ -4,6 +4,8 @@ Manages tasks, assigns priorities, and optimizes task execution.
 """
 
 from .base_agent import BaseAgent
+from .enhancements.task_prioritization_enhancements import TaskPrioritizationEnhancements
+from .enhancements.chart_generation import ChartGenerator
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import json
@@ -30,17 +32,69 @@ class TaskPrioritizationAgent(BaseAgent):
         You should consider deadlines, dependencies, team capacity, and project goals when prioritizing tasks.
         Always provide clear, actionable recommendations."""
     
-    def prioritize_tasks(self, tasks: List[Dict]) -> List[Dict]:
+    def prioritize_tasks(self, tasks: List[Dict], context: Optional[Dict] = None) -> List[Dict]:
         """
         Auto-prioritize tasks based on deadlines, dependencies, and importance.
+        Enhanced with multi-factor scoring and critical path analysis.
         
         Args:
             tasks (List[Dict]): List of tasks to prioritize
+            context (Dict): Optional project context for enhanced analysis
             
         Returns:
             List[Dict]: Tasks with assigned priorities
         """
         self.log_action("Prioritizing tasks", {"task_count": len(tasks)})
+        
+        # Enhanced: Use multi-factor scoring if context available
+        if context:
+            try:
+                # Calculate priority scores for each task
+                for task in tasks:
+                    priority_score = TaskPrioritizationEnhancements.calculate_priority_score(
+                        task, context
+                    )
+                    task['priority_score'] = round(priority_score, 2)
+                    
+                    # Convert score to priority level
+                    if priority_score >= 70:
+                        task['ai_priority'] = 'high'
+                    elif priority_score >= 40:
+                        task['ai_priority'] = 'medium'
+                    else:
+                        task['ai_priority'] = 'low'
+                
+                # Calculate critical path
+                critical_path_analysis = TaskPrioritizationEnhancements.calculate_critical_path(tasks)
+                if critical_path_analysis:
+                    # Add critical path info to tasks
+                    critical_path_ids = {cp['task_id'] for cp in critical_path_analysis.get('critical_path', [])}
+                    for task in tasks:
+                        if task.get('id') in critical_path_ids:
+                            task['is_critical_path'] = True
+                            task['slack'] = critical_path_analysis['slack_times'].get(task['id'], {}).get('total_float', 0)
+                
+                # Generate charts for visualization
+                try:
+                    charts = {}
+                    charts['priority_distribution'] = ChartGenerator.generate_priority_distribution_chart(tasks)
+                    charts['status_distribution'] = ChartGenerator.generate_status_distribution_chart(tasks)
+                    
+                    # Add priority score chart if scores are available
+                    if any('priority_score' in task for task in tasks):
+                        charts['priority_scores'] = ChartGenerator.generate_priority_score_chart(tasks)
+                    
+                    # Add critical path chart if available
+                    if critical_path_analysis and critical_path_analysis.get('critical_path'):
+                        charts['critical_path'] = ChartGenerator.generate_critical_path_chart(
+                            critical_path_analysis['critical_path']
+                        )
+                    
+                    context['charts'] = charts
+                except Exception as e:
+                    self.log_action("Chart generation failed", {"error": str(e)})
+            except Exception as e:
+                self.log_action("Enhanced prioritization failed, using fallback", {"error": str(e)})
         
         # Prepare task data for AI analysis
         tasks_summary = []
@@ -114,6 +168,14 @@ Return a JSON array with this structure for each task:
                     task['ai_reasoning'] = reasoning_prefix + priority_map[task_id]['reasoning']
                     task['suggested_order'] = priority_map[task_id]['suggested_order']
             
+            # Add charts to return value if available
+            if context and 'charts' in context:
+                return {
+                    'tasks': tasks,
+                    'charts': context['charts'],
+                    'critical_path_analysis': context.get('critical_path_analysis')
+                }
+            
             return tasks
             
         except Exception as e:
@@ -136,6 +198,19 @@ Return a JSON array with this structure for each task:
                 else:
                     task['ai_priority'] = task.get('priority', 'medium')
             return tasks
+    
+    def predict_priority_changes(self, tasks: List[Dict], days_ahead: int = 7) -> List[Dict]:
+        """
+        Predict how priorities should change in the future.
+        
+        Args:
+            tasks (List[Dict]): List of tasks
+            days_ahead (int): Number of days to look ahead
+            
+        Returns:
+            List[Dict]: Predicted priority changes
+        """
+        return TaskPrioritizationEnhancements.predict_priority_changes(tasks, days_ahead)
     
     def suggest_task_order(self, tasks: List[Dict]) -> List[Dict]:
         """
@@ -484,7 +559,8 @@ Return JSON:
         try:
             if action == "prioritize":
                 tasks = kwargs.get('tasks', [])
-                prioritized = self.prioritize_tasks(tasks)
+                context = kwargs.get('context', {})
+                prioritized = self.prioritize_tasks(tasks, context=context)
                 return {"success": True, "tasks": prioritized}
             
             elif action == "order":

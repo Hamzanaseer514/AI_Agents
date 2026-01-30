@@ -66,6 +66,7 @@ const CompanyDashboardPage = () => {
   const [allUsersTasksLoading, setAllUsersTasksLoading] = useState(false);
   const [taskStatusFilter, setTaskStatusFilter] = useState('all');
   const [taskUserFilter, setTaskUserFilter] = useState('all');
+  const [taskProjectFilter, setTaskProjectFilter] = useState('all');
   
   // Project and Task editing state
   const [editingProject, setEditingProject] = useState(null);
@@ -85,6 +86,7 @@ const CompanyDashboardPage = () => {
     priority: 'medium',
     status: 'todo',
     assignee_id: '',
+    due_date: '',
   });
   const [availableUsers, setAvailableUsers] = useState([]);
 
@@ -377,12 +379,27 @@ const CompanyDashboardPage = () => {
     // Handle both assignee_id (from serializer) and assignee.id (if assignee object exists)
     const assigneeId = task.assignee_id || (task.assignee && task.assignee.id) || null;
     const assigneeIdString = assigneeId ? assigneeId.toString() : 'none';
+    
+    // Format due_date for datetime-local input (YYYY-MM-DDTHH:mm)
+    let formattedDueDate = '';
+    if (task.due_date) {
+      const dueDate = new Date(task.due_date);
+      // Format as YYYY-MM-DDTHH:mm for datetime-local input
+      const year = dueDate.getFullYear();
+      const month = String(dueDate.getMonth() + 1).padStart(2, '0');
+      const day = String(dueDate.getDate()).padStart(2, '0');
+      const hours = String(dueDate.getHours()).padStart(2, '0');
+      const minutes = String(dueDate.getMinutes()).padStart(2, '0');
+      formattedDueDate = `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+    
     setTaskForm({
       title: task.title || '',
       description: task.description || '',
       priority: task.priority || 'medium',
       status: task.status || 'todo',
       assignee_id: assigneeIdString,
+      due_date: formattedDueDate,
     });
     // Fetch users if not already loaded
     if (availableUsers.length === 0) {
@@ -399,9 +416,19 @@ const CompanyDashboardPage = () => {
       // Convert "none" to null for unassigning
       const assigneeId = taskForm.assignee_id === 'none' || taskForm.assignee_id === '' ? null : taskForm.assignee_id;
       
+      // Format due_date for API (convert to ISO string or null)
+      let dueDateValue = null;
+      if (taskForm.due_date) {
+        const dateObj = new Date(taskForm.due_date);
+        if (!isNaN(dateObj.getTime())) {
+          dueDateValue = dateObj.toISOString();
+        }
+      }
+      
       const response = await companyProjectsTasksService.updateTask(editingTask.id, {
         ...taskForm,
         assignee_id: assigneeId,
+        due_date: dueDateValue,
       });
       if (response.status === 'success') {
         toast({
@@ -433,9 +460,21 @@ const CompanyDashboardPage = () => {
       fetchUsers();
     }
     if (activeTab === 'all-tasks' && companyUser) {
+      // Fetch projects for the filter if not already loaded
+      if (projects.length === 0) {
+        fetchProjects();
+      }
+      // Fetch users for the filter if not already loaded
+      if (users.length === 0) {
+        fetchUsers();
+      }
+      // Fetch available users for assignment if not already loaded
+      if (availableUsers.length === 0) {
+        fetchAvailableUsers();
+      }
       fetchAllUsersTasks();
     }
-  }, [activeTab, companyUser, taskStatusFilter, taskUserFilter]);
+  }, [activeTab, companyUser, taskStatusFilter, taskUserFilter, taskProjectFilter]);
   
   const fetchAllUsersTasks = async () => {
     try {
@@ -446,6 +485,9 @@ const CompanyDashboardPage = () => {
       }
       if (taskUserFilter !== 'all') {
         params.user_id = taskUserFilter;
+      }
+      if (taskProjectFilter !== 'all') {
+        params.project_id = taskProjectFilter;
       }
       
       const queryParams = new URLSearchParams(params);
@@ -1276,7 +1318,7 @@ const CompanyDashboardPage = () => {
 
             <TabsContent value="all-tasks" className="space-y-4">
               {/* Filters */}
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <Select value={taskStatusFilter} onValueChange={setTaskStatusFilter}>
                   <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="Filter by status" />
@@ -1297,9 +1339,33 @@ const CompanyDashboardPage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Users</SelectItem>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id.toString()}>
-                        {user.full_name || user.username}
+                    {availableUsers.length > 0 ? (
+                      availableUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id.toString()}>
+                          {user.full_name || user.username || user.email}
+                        </SelectItem>
+                      ))
+                    ) : users.length > 0 ? (
+                      users.map((user) => (
+                        <SelectItem key={user.id} value={user.id.toString()}>
+                          {user.full_name || user.username || user.email}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="loading" disabled>Loading users...</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                
+                <Select value={taskProjectFilter} onValueChange={setTaskProjectFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id.toString()}>
+                        {project.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1316,7 +1382,7 @@ const CompanyDashboardPage = () => {
                     <ListTodo className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-lg font-medium mb-2">No tasks found</p>
                     <p className="text-sm text-muted-foreground">
-                      {taskStatusFilter !== 'all' || taskUserFilter !== 'all'
+                      {taskStatusFilter !== 'all' || taskUserFilter !== 'all' || taskProjectFilter !== 'all'
                         ? 'No tasks match the selected filters'
                         : 'No tasks have been assigned to your users yet'}
                     </p>
@@ -1777,6 +1843,7 @@ const CompanyDashboardPage = () => {
               priority: 'medium',
               status: 'todo',
               assignee_id: 'none',
+              due_date: '',
             });
           }
         }}>
@@ -1864,6 +1931,19 @@ const CompanyDashboardPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="task-due-date">Due Date (Deadline)</Label>
+                <Input
+                  id="task-due-date"
+                  type="datetime-local"
+                  value={taskForm.due_date}
+                  onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Set the deadline for this task. This is when the task should be completed.
+                </p>
               </div>
               
               <div className="flex justify-end gap-2 pt-4">

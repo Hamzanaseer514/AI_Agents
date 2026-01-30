@@ -4,7 +4,11 @@ Provides insights, analytics, and visualizations for project performance.
 """
 
 from .base_agent import BaseAgent
+from .enhancements.chart_generation import ChartGenerator
+from core.models import Project, Task
 from typing import Dict, List, Optional
+from django.utils import timezone
+from datetime import datetime, timedelta
 
 
 class AnalyticsDashboardAgent(BaseAgent):
@@ -51,8 +55,91 @@ class AnalyticsDashboardAgent(BaseAgent):
         Returns:
             Dict: Dashboard data and visualizations
         """
-        # TODO: Implement dashboard creation
-        pass
+        self.log_action("Creating dashboard", {"project_id": project_id})
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'Project with ID {project_id} not found'
+            }
+        
+        tasks = Task.objects.filter(project=project).select_related('assignee')
+        tasks_data = [{
+            'id': t.id,
+            'title': t.title,
+            'status': t.status,
+            'priority': t.priority,
+            'priority_score': getattr(t, 'priority_score', None),
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+            'assignee_id': t.assignee.id if t.assignee else None,
+        } for t in tasks]
+        
+        # Generate all charts
+        charts = {}
+        
+        # Status distribution
+        charts['status_distribution'] = ChartGenerator.generate_status_distribution_chart(tasks_data)
+        
+        # Priority distribution
+        charts['priority_distribution'] = ChartGenerator.generate_priority_distribution_chart(tasks_data)
+        
+        # Priority scores if available
+        if any('priority_score' in task for task in tasks_data):
+            charts['priority_scores'] = ChartGenerator.generate_priority_score_chart(tasks_data)
+        
+        # Calculate metrics
+        total_tasks = len(tasks_data)
+        completed = sum(1 for t in tasks_data if t['status'] == 'done')
+        in_progress = sum(1 for t in tasks_data if t['status'] == 'in_progress')
+        blocked = sum(1 for t in tasks_data if t['status'] == 'blocked')
+        completion_rate = (completed / total_tasks * 100) if total_tasks > 0 else 0
+        
+        # Overdue tasks
+        now = timezone.now()
+        overdue = sum(1 for t in tasks_data 
+                     if t['due_date'] and 
+                     datetime.fromisoformat(t['due_date'].replace('Z', '+00:00')) < now and
+                     t['status'] not in ['done'])
+        
+        dashboard_data = {
+            'success': True,
+            'project_id': project_id,
+            'project_name': project.name,
+            'metrics': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed,
+                'in_progress_tasks': in_progress,
+                'blocked_tasks': blocked,
+                'overdue_tasks': overdue,
+                'completion_rate': round(completion_rate, 2),
+                'health_score': self._calculate_health_score_from_metrics(
+                    completion_rate, overdue, blocked, total_tasks
+                )
+            },
+            'charts': charts,
+            'generated_at': timezone.now().isoformat()
+        }
+        
+        return dashboard_data
+    
+    def _calculate_health_score_from_metrics(self, completion_rate: float, overdue: int, 
+                                            blocked: int, total_tasks: int) -> float:
+        """Calculate health score from metrics"""
+        score = completion_rate  # Base score
+        
+        # Penalize for overdue tasks
+        if total_tasks > 0:
+            overdue_rate = (overdue / total_tasks) * 100
+            score -= overdue_rate * 0.5
+        
+        # Penalize for blocked tasks
+        if total_tasks > 0:
+            blocked_rate = (blocked / total_tasks) * 100
+            score -= blocked_rate * 0.3
+        
+        return max(0, min(100, round(score, 2)))
     
     def track_progress(self, project_id: int) -> Dict:
         """

@@ -756,7 +756,15 @@ def task_prioritization(request):
         tasks = [
             {
                 "id": t.id,
-                "title": t.title
+                "title": t.title,
+                "description": t.description,
+                "status": t.status,
+                "priority": t.priority,
+                "due_date": t.due_date.isoformat() if t.due_date else None,
+                "estimated_hours": float(t.estimated_hours) if t.estimated_hours else None,
+                "assignee_id": t.assignee.id if t.assignee else None,
+                "dependencies": [dep.id for dep in t.depends_on.all()],
+                "dependent_count": t.dependent_tasks.count(),
             }
             for t in tasks_queryset
         ]
@@ -776,11 +784,8 @@ def task_prioritization(request):
             for m in members
         ]
 
-        context = {
-            "tasks": tasks,
-            "team": team,
-        }
-
+        # Build context for prioritize_tasks (only project info, not tasks/team)
+        context = {}
         if project_id:
             context["project"] = {
                 "id": project.id,
@@ -788,21 +793,57 @@ def task_prioritization(request):
                 "status": project.status,
             }
 
-        result = agent.process(context=context)
+        # Get action from request (default to 'prioritize')
+        action = request.data.get("action", "prioritize")
+        
+        # Call process() method with the action parameter
+        # Note: tasks and team_members are passed explicitly, not through context
+        # Also pass context separately for prioritize_tasks to use
+        result = agent.process(action=action, tasks=tasks, team_members=team, context=context)
+        
+        # Ensure result is a dict
+        if not isinstance(result, dict):
+            result = {"success": True, "tasks": result if isinstance(result, list) else []}
+        
+        # For 'prioritize' action, handle different return formats from prioritize_tasks()
+        if action == "prioritize" and "tasks" in result:
+            tasks_result = result["tasks"]
+            # If tasks_result is a dict (contains charts/critical_path), extract the tasks list
+            if isinstance(tasks_result, dict) and "tasks" in tasks_result:
+                # prioritize_tasks returned a dict with tasks, charts, etc.
+                charts = tasks_result.get("charts")
+                critical_path_analysis = tasks_result.get("critical_path_analysis")
+                result["tasks"] = tasks_result["tasks"]
+                if charts:
+                    result["charts"] = charts
+                if critical_path_analysis:
+                    result["critical_path_analysis"] = critical_path_analysis
+            elif isinstance(tasks_result, list):
+                # prioritize_tasks returned a list directly
+                result["tasks"] = tasks_result
+            else:
+                # Fallback: ensure tasks is a list
+                result["tasks"] = []
 
         # Apply prioritization suggestions
-        if result.get("prioritized_tasks"):
-            for task_data in result["prioritized_tasks"]:
-                task_id = task_data.get("task_id")
+        tasks_to_update = result.get("tasks") or result.get("prioritized_tasks", [])
+        if tasks_to_update:
+            for task_data in tasks_to_update:
+                # Handle both 'id' and 'task_id' field names
+                task_id = task_data.get("task_id") or task_data.get("id")
                 if task_id:
                     try:
                         t = Task.objects.get(id=task_id, project__created_by_company_user=company_user)
-                        if "priority" in task_data:
+                        # Update priority if AI recommended a new one
+                        if "ai_priority" in task_data:
+                            t.priority = task_data["ai_priority"]
+                        elif "priority" in task_data:
                             t.priority = task_data["priority"]
+                        # Update status if provided
                         if "status" in task_data:
                             t.status = task_data["status"]
                         t.save()
-                    except Task.DoesNotExist:
+                    except (Task.DoesNotExist, ValueError, TypeError):
                         continue
 
         return Response({"status": "success", "data": result}, status=status.HTTP_200_OK)
@@ -861,13 +902,29 @@ def generate_subtasks(request):
         tasks = [
             {
                 "id": t.id,
-                "title": t.title
+                "title": t.title,
+                "description": t.description or "",
+                "status": t.status,
+                "priority": t.priority,
+                "estimated_hours": float(t.estimated_hours) if t.estimated_hours else None,
             }
             for t in tasks_queryset
         ]
 
-        context = {"tasks": tasks}
-        result = agent.process(context=context)
+        # Use 'generate_for_project' action and pass tasks
+        result = agent.process(action="generate_for_project", tasks=tasks)
+        
+        # Transform result to match expected format
+        if result.get("success") and result.get("subtasks_by_task"):
+            # Convert subtasks_by_task dict to list format expected by frontend
+            subtasks_list = []
+            for task_id, subtask_data in result["subtasks_by_task"].items():
+                subtasks_list.append({
+                    "task_id": task_id,
+                    "subtasks": subtask_data.get("subtasks", []),
+                    "reasoning": subtask_data.get("task_reasoning", "")
+                })
+            result["subtasks"] = subtasks_list
 
         # Save generated subtasks
         saved_count = 0
@@ -893,13 +950,23 @@ def generate_subtasks(request):
                 Subtask.objects.filter(task=task).delete()
 
                 # Create new subtasks
-                for idx, subtask_title in enumerate(subtasks_list):
-                    Subtask.objects.create(
-                        task=task,
-                        title=subtask_title,
-                        order=idx + 1,
-                    )
-                    saved_count += 1
+                # Handle both string format (old) and dict format (new)
+                for idx, subtask_item in enumerate(subtasks_list):
+                    # Extract title from dict or use string directly
+                    if isinstance(subtask_item, dict):
+                        subtask_title = subtask_item.get('title', '')
+                        subtask_order = subtask_item.get('order', idx + 1)
+                    else:
+                        subtask_title = str(subtask_item)
+                        subtask_order = idx + 1
+                    
+                    if subtask_title:
+                        Subtask.objects.create(
+                            task=task,
+                            title=subtask_title,
+                            order=subtask_order,
+                        )
+                        saved_count += 1
 
                 continue
             except Task.DoesNotExist:
@@ -988,7 +1055,20 @@ def timeline_gantt(request):
         }
 
         agent = AgentRegistry.get_agent("timeline_gantt")
-        result = agent.process(action=action, context=context, **request.data)
+        
+        # Extract action-specific options from request.data, excluding action and project_id
+        options = {k: v for k, v in request.data.items() 
+                   if k not in ['action', 'project_id']}
+        
+        # Pass project_id and tasks as kwargs (required by agent.process)
+        # Some actions need tasks from context
+        result = agent.process(
+            action=action, 
+            project_id=project_id, 
+            tasks=context.get('tasks', []),
+            context=context, 
+            **options
+        )
 
         # Apply timeline updates if provided
         if result.get("updates"):
@@ -1189,10 +1269,25 @@ def knowledge_qa(request):
                 "user_assignments": user_assignments,
             }
 
+        # Enhanced: Get session_id for conversational memory
+        session_id = request.data.get("session_id")
+        if not session_id:
+            # Generate session ID from company user ID
+            session_id = f"company_user_{company_user.id}"
+        
         agent = AgentRegistry.get_agent("knowledge_qa")
-        result = agent.process(question=question, context=context, available_users=available_users)
+        result = agent.process(
+            question=question, 
+            context=context, 
+            available_users=available_users,
+            session_id=session_id
+        )
 
-        return Response({"status": "success", "data": result}, status=status.HTTP_200_OK)
+        return Response({
+            "status": "success", 
+            "data": result,
+            "session_id": session_id  # Return session_id for frontend to use
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.exception("knowledge_qa failed")

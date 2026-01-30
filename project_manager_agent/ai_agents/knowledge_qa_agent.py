@@ -5,6 +5,8 @@ This agent only provides descriptive answers - it does not perform actions.
 """
 
 from .base_agent import BaseAgent
+from .enhancements.knowledge_qa_enhancements import KnowledgeQAEnhancements
+from .enhancements.chart_generation import ChartGenerator
 from typing import Dict, Optional, List
 import json
 import re
@@ -34,20 +36,32 @@ class KnowledgeQAAgent(BaseAgent):
         For action requests (creating projects, tasks, etc.), users should use the Project Pilot agent.
         You should be conversational, accurate, and provide context-aware responses."""
     
-    def answer_question(self, question: str, context: Optional[Dict] = None, available_users: Optional[List[Dict]] = None) -> Dict:
+    def answer_question(self, question: str, context: Optional[Dict] = None, 
+                       available_users: Optional[List[Dict]] = None,
+                       session_id: Optional[str] = None) -> Dict:
         """
         Answer a question about the project. This agent ONLY provides descriptive answers.
+        Enhanced with conversational memory and answer quality improvements.
         For action requests (creating projects/tasks), use the Project Pilot agent.
         
         Args:
             question (str): User's question
             context (Dict): Optional context (project info, tasks, etc.)
             available_users (List[Dict]): List of available users/team members
+            session_id (str): Optional session ID for conversation memory
             
         Returns:
-            Dict: Answer with relevant information
+            Dict: Answer with relevant information and enhancements
         """
-        self.log_action("Answering question", {"question": question[:50]})
+        self.log_action("Answering question", {"question": question[:50], "session_id": session_id})
+        
+        # Enhanced: Get conversation history
+        conversation_context = ""
+        if session_id:
+            try:
+                conversation_context = KnowledgeQAEnhancements.build_conversation_context(session_id)
+            except Exception as e:
+                self.log_action("Error building conversation context", {"error": str(e)})
         
         # Build context string
         context_str = ""
@@ -149,6 +163,7 @@ Return a helpful text response (NOT JSON)."""
         
 {context_str}
 {users_str}
+{conversation_context}
 
 Question: {question}
 
@@ -166,14 +181,73 @@ Provide a helpful, accurate answer. If the question is about specific data that 
 Be conversational and clear. If asked about available users and their assignments, provide detailed information from both the users section and the assignments section above."""
         
         try:
+            # Enhanced: Perform semantic search to find most relevant context
+            relevant_results = []
+            if context:
+                try:
+                    relevant_results = KnowledgeQAEnhancements.semantic_search(
+                        question, context, top_k=5
+                    )
+                    # Add semantic search results to context string if found
+                    if relevant_results:
+                        context_str += "\n\n🔍 Most Relevant Results (Semantic Search):\n"
+                        for i, result in enumerate(relevant_results[:3], 1):
+                            context_str += f"{i}. {result['type'].upper()}: {result['title']} (Confidence: {result['confidence']:.2f})\n"
+                except Exception as e:
+                    self.log_action("Error in semantic search", {"error": str(e)})
+            
             max_tokens = 800
             response = self._call_llm(prompt, self.system_prompt, temperature=0.7, max_tokens=max_tokens)
             
-            return {
+            # Enhanced: Improve answer quality
+            enhanced_answer = KnowledgeQAEnhancements.enhance_answer_quality(
+                question, response, context or {}
+            )
+            
+            # Add semantic search results to answer
+            if relevant_results:
+                enhanced_answer['semantic_search_results'] = relevant_results
+            
+            # Enhanced: Add to conversation history
+            if session_id:
+                try:
+                    KnowledgeQAEnhancements.add_to_conversation(
+                        session_id, question, response, context
+                    )
+                except Exception as e:
+                    self.log_action("Error saving conversation", {"error": str(e)})
+            
+            # Enhanced: Generate proactive insights
+            insights = []
+            charts = {}
+            if context:
+                try:
+                    insights = KnowledgeQAEnhancements.generate_proactive_insights(context)
+                    
+                    # Generate charts for insights if available
+                    if insights:
+                        charts['insights'] = ChartGenerator.generate_insights_chart(insights)
+                    
+                    # Generate status distribution chart if tasks available
+                    if context.get('tasks'):
+                        charts['status_distribution'] = ChartGenerator.generate_status_distribution_chart(
+                            context['tasks']
+                        )
+                except Exception as e:
+                    self.log_action("Error generating insights/charts", {"error": str(e)})
+            
+            result = {
                 "success": True,
-                "answer": response,
+                **enhanced_answer,
+                "proactive_insights": insights,
                 "question": question
             }
+            
+            # Add charts if available
+            if charts:
+                result['charts'] = charts
+            
+            return result
         except Exception as e:
             self.log_action("Error answering question", {"error": str(e)})
             return {
@@ -278,5 +352,6 @@ Provide a clear, step-by-step explanation of how this workflow works."""
         
         context = kwargs.get('context', {})
         available_users = kwargs.get('available_users', [])
-        return self.answer_question(question, context, available_users)
+        session_id = kwargs.get('session_id')
+        return self.answer_question(question, context, available_users, session_id)
 

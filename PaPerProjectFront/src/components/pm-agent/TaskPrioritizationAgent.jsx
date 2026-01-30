@@ -6,6 +6,19 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import pmAgentService from '@/services/pmAgentService';
 import { Loader2, Target, ListChecks, AlertTriangle, Users } from 'lucide-react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 const TaskPrioritizationAgent = ({ projects = [] }) => {
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -190,6 +203,116 @@ const TaskPrioritizationAgent = ({ projects = [] }) => {
             <CardTitle>Analysis Results</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Charts Section */}
+            {result.data?.charts && (
+              <div className="space-y-4 mb-6">
+                {/* Priority Distribution Chart */}
+                {result.data.charts.priority_distribution && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{result.data.charts.priority_distribution.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={result.data.charts.priority_distribution.data}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="value" fill="#3b82f6">
+                            {result.data.charts.priority_distribution.data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Status Distribution Chart */}
+                {result.data.charts.status_distribution && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{result.data.charts.status_distribution.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <PieChart>
+                          <Pie
+                            data={result.data.charts.status_distribution.data}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                          >
+                            {result.data.charts.status_distribution.data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Priority Score Chart */}
+                {result.data.charts.priority_scores && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{result.data.charts.priority_scores.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={result.data.charts.priority_scores.data}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="value" fill="#8b5cf6">
+                            {result.data.charts.priority_scores.data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Critical Path Chart */}
+                {result.data.charts.critical_path && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{result.data.charts.critical_path.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          {result.data.charts.critical_path.total_tasks} critical path tasks
+                        </p>
+                        {result.data.charts.critical_path.data.map((cp, index) => (
+                          <div key={index} className="p-3 border rounded-lg bg-yellow-50 dark:bg-yellow-950">
+                            <p className="font-medium">{cp.title}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Duration: {cp.duration} days | Float: {cp.total_float} days
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
             {/* Tasks with priorities */}
             {result.data?.tasks && result.data.tasks.length > 0 && (
               <div className="space-y-3">
