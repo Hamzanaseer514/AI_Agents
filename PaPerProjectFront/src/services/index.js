@@ -17,4 +17,6 @@ export { default as companyJobsService } from './companyJobsService';
 export { default as applicantService } from './applicantService';
 export { default as pmAgentService } from './pmAgentService';
 export { default as marketingAgentService } from './marketingAgentService';
+export { default as companyUserManagementService } from './companyUserManagementService';
+export { default as userTaskService } from './userTaskService';
 

@@ -39,8 +39,10 @@ import CompanyRegisterPage from '@/pages/CompanyRegisterPage';
 import CompanyLoginPage from '@/pages/CompanyLoginPage';
 import CompanyDashboardPage from '@/pages/CompanyDashboardPage';
 import ProjectManagerDashboardPage from '@/pages/ProjectManagerDashboardPage';
+import UserDashboardPage from '@/pages/UserDashboardPage';
 import MarketingAgentPage from '@/pages/MarketingAgentPage';
 import RecruitmentAgentPage from '@/pages/RecruitmentAgentPage';
+import ModulePurchaseSuccessPage from '@/pages/ModulePurchaseSuccessPage';
 import ProtectedRoute from '@/components/common/ProtectedRoute';
 import PublicLayout from '@/components/layout/PublicLayout';
 import ScrollToTop from '@/components/layout/ScrollToTop';
@@ -71,6 +73,16 @@ import { useTranslation } from 'react-i18next';
               } 
             />
             
+            {/* User Dashboard (for company-created users) */}
+            <Route 
+              path="/user/dashboard" 
+              element={
+                <ProtectedRoute>
+                  <UserDashboardPage />
+                </ProtectedRoute>
+              } 
+            />
+            
             {/* Company routes without header/footer */}
             <Route path="/company/register" element={<CompanyRegisterPage />} />
             <Route path="/company/login" element={<CompanyLoginPage />} />
@@ -92,6 +104,9 @@ import { useTranslation } from 'react-i18next';
             {/* Recruitment Agent routes without header/footer */}
             <Route path="/recruitment/dashboard" element={<RecruitmentAgentPage />} />
             
+            {/* Module purchase Stripe success (public) */}
+            <Route path="/module-purchase-success" element={<PublicLayout><ModulePurchaseSuccessPage /></PublicLayout>} />
+
             {/* Public routes with header/footer */}
             <Route path="/" element={<PublicLayout><HomePage /></PublicLayout>} />
             <Route path="/how-it-works" element={<PublicLayout><HowItWorksPage /></PublicLayout>} />

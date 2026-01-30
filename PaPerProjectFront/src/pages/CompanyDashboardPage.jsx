@@ -10,15 +10,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { companyJobsService } from '@/services';
 import { companyApi } from '@/services/companyAuthService';
+import { getPurchasedModules } from '@/services/modulePurchaseService';
+import companyUserManagementService from '@/services/companyUserManagementService';
+import companyProjectsTasksService from '@/services/companyProjectsTasksService';
 import DashboardNavbar from '@/components/common/DashboardNavbar';
 import { 
   Building2, Plus, Briefcase, Users, Eye, 
   Loader2, Search, Calendar, MapPin, Clock, Download, BrainCircuit, FolderKanban,
-  ChevronDown, ChevronRight, ListTodo, UserCheck, Megaphone
+  ChevronDown, ChevronRight, ListTodo, UserCheck, Megaphone, UserPlus, Edit, Trash2, Mail,
+  CheckCircle2, Circle, PlayCircle, AlertCircle, FileCheck, TrendingUp, User
 } from 'lucide-react';
 
 const CompanyDashboardPage = () => {
@@ -38,6 +42,51 @@ const CompanyDashboardPage = () => {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [expandedProjects, setExpandedProjects] = useState(new Set());
   const [expandedTasks, setExpandedTasks] = useState(new Set());
+  const [purchasedModules, setPurchasedModules] = useState([]);
+  
+  // User management state
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userForm, setUserForm] = useState({
+    email: '',
+    password: '',
+    username: '',
+    fullName: '',
+    role: 'team_member',
+    phoneNumber: '',
+    bio: '',
+    location: '',
+  });
+  
+  // All users tasks state
+  const [allUsersTasks, setAllUsersTasks] = useState([]);
+  const [allUsersTasksLoading, setAllUsersTasksLoading] = useState(false);
+  const [taskStatusFilter, setTaskStatusFilter] = useState('all');
+  const [taskUserFilter, setTaskUserFilter] = useState('all');
+  
+  // Project and Task editing state
+  const [editingProject, setEditingProject] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [projectForm, setProjectForm] = useState({
+    name: '',
+    description: '',
+    status: 'active',
+    priority: 'medium',
+    project_type: 'web_app',
+  });
+  const [taskForm, setTaskForm] = useState({
+    title: '',
+    description: '',
+    priority: 'medium',
+    status: 'todo',
+    assignee_id: '',
+  });
+  const [availableUsers, setAvailableUsers] = useState([]);
 
   const [jobForm, setJobForm] = useState({
     title: '',
@@ -47,6 +96,43 @@ const CompanyDashboardPage = () => {
     description: '',
     requirements: '',
   });
+
+  const fetchPurchasedModules = async () => {
+    try {
+      // Try to get from localStorage first (cache)
+      const cachedModules = localStorage.getItem('company_purchased_modules');
+      if (cachedModules) {
+        try {
+          const cached = JSON.parse(cachedModules);
+          setPurchasedModules(cached);
+        } catch (e) {
+          // Invalid cache, continue to fetch
+        }
+      }
+
+      const response = await getPurchasedModules();
+      if (response.status === 'success') {
+        const moduleNames = response.module_names || [];
+        setPurchasedModules(moduleNames);
+        // Cache in localStorage
+        localStorage.setItem('company_purchased_modules', JSON.stringify(moduleNames));
+      }
+    } catch (error) {
+      console.error('Error fetching purchased modules:', error);
+      // If we have cached modules, use them
+      const cachedModules = localStorage.getItem('company_purchased_modules');
+      if (cachedModules) {
+        try {
+          const cached = JSON.parse(cachedModules);
+          setPurchasedModules(cached);
+        } catch (e) {
+          setPurchasedModules([]);
+        }
+      } else {
+        setPurchasedModules([]);
+      }
+    }
+  };
 
   useEffect(() => {
     // Get company user from localStorage
@@ -79,7 +165,20 @@ const CompanyDashboardPage = () => {
       }
       
       setCompanyUser(user);
+      
+      // Load cached modules immediately
+      const cachedModules = localStorage.getItem('company_purchased_modules');
+      if (cachedModules) {
+        try {
+          const cached = JSON.parse(cachedModules);
+          setPurchasedModules(cached);
+        } catch (e) {
+          // Invalid cache
+        }
+      }
+      
       fetchJobs();
+      fetchPurchasedModules(); // Will update cache
       if (activeTab === 'projects') {
         fetchProjects();
       }
@@ -225,11 +324,272 @@ const CompanyDashboardPage = () => {
     }
   };
 
+  const fetchAvailableUsers = async () => {
+    try {
+      const response = await companyProjectsTasksService.getUsersForAssignment();
+      if (response.status === 'success') {
+        setAvailableUsers(response.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching users for assignment:', error);
+    }
+  };
+
+  const handleEditProject = (project) => {
+    setEditingProject(project);
+    setProjectForm({
+      name: project.name || '',
+      description: project.description || '',
+      status: project.status || 'active',
+      priority: project.priority || 'medium',
+      project_type: project.project_type || 'web_app',
+    });
+    setShowEditProjectModal(true);
+  };
+
+  const handleUpdateProject = async (e) => {
+    e.preventDefault();
+    if (!editingProject) return;
+    
+    try {
+      const response = await companyProjectsTasksService.updateProject(editingProject.id, projectForm);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Project updated successfully',
+        });
+        setShowEditProjectModal(false);
+        setEditingProject(null);
+        fetchProjects();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update project',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleEditTask = (task) => {
+    setEditingTask(task);
+    // Convert null/undefined assignee_id to "none" for the select
+    // Handle both assignee_id (from serializer) and assignee.id (if assignee object exists)
+    const assigneeId = task.assignee_id || (task.assignee && task.assignee.id) || null;
+    const assigneeIdString = assigneeId ? assigneeId.toString() : 'none';
+    setTaskForm({
+      title: task.title || '',
+      description: task.description || '',
+      priority: task.priority || 'medium',
+      status: task.status || 'todo',
+      assignee_id: assigneeIdString,
+    });
+    // Fetch users if not already loaded
+    if (availableUsers.length === 0) {
+      fetchAvailableUsers();
+    }
+    setShowEditTaskModal(true);
+  };
+
+  const handleUpdateTask = async (e) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    
+    try {
+      // Convert "none" to null for unassigning
+      const assigneeId = taskForm.assignee_id === 'none' || taskForm.assignee_id === '' ? null : taskForm.assignee_id;
+      
+      const response = await companyProjectsTasksService.updateTask(editingTask.id, {
+        ...taskForm,
+        assignee_id: assigneeId,
+      });
+      if (response.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Task updated successfully',
+        });
+        setShowEditTaskModal(false);
+        setEditingTask(null);
+        // Refresh both projects and all users tasks
+        fetchProjects();
+        if (activeTab === 'all-tasks') {
+          fetchAllUsersTasks();
+        }
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update task',
+        variant: 'destructive',
+      });
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'projects' && companyUser) {
       fetchProjects();
     }
-  }, [activeTab, companyUser]);
+    if (activeTab === 'users' && companyUser) {
+      fetchUsers();
+    }
+    if (activeTab === 'all-tasks' && companyUser) {
+      fetchAllUsersTasks();
+    }
+  }, [activeTab, companyUser, taskStatusFilter, taskUserFilter]);
+  
+  const fetchAllUsersTasks = async () => {
+    try {
+      setAllUsersTasksLoading(true);
+      const params = {};
+      if (taskStatusFilter !== 'all') {
+        params.status = taskStatusFilter;
+      }
+      if (taskUserFilter !== 'all') {
+        params.user_id = taskUserFilter;
+      }
+      
+      const queryParams = new URLSearchParams(params);
+      const queryString = queryParams.toString();
+      const endpoint = `/company/users/tasks${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await companyApi.get(endpoint);
+      if (response.status === 'success') {
+        setAllUsersTasks(response.data || []);
+      } else {
+        throw new Error(response.message || 'Failed to load tasks');
+      }
+    } catch (error) {
+      console.error('Error fetching all users tasks:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load tasks',
+        variant: 'destructive',
+      });
+      setAllUsersTasks([]);
+    } finally {
+      setAllUsersTasksLoading(false);
+    }
+  };
+  
+  const fetchUsers = async () => {
+    try {
+      setUsersLoading(true);
+      const response = await companyUserManagementService.listUsers({ page: 1, limit: 50 });
+      if (response.status === 'success') {
+        setUsers(response.data || []);
+      } else {
+        throw new Error(response.message || 'Failed to load users');
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load users',
+        variant: 'destructive',
+      });
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+  
+  const handleCreateUser = async () => {
+    try {
+      if (!userForm.email || !userForm.password) {
+        toast({
+          title: 'Validation Error',
+          description: 'Email and password are required',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      const response = await companyUserManagementService.createUser(userForm);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'User created successfully',
+        });
+        setShowCreateUserModal(false);
+        setUserForm({
+          email: '', password: '', username: '', fullName: '', role: 'team_member',
+          phoneNumber: '', bio: '', location: '',
+        });
+        fetchUsers();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create user',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleEditUser = (user) => {
+    setEditingUser(user);
+    setUserForm({
+      email: user.email || '',
+      password: '', // Don't pre-fill password
+      username: user.username || '',
+      fullName: user.full_name || '',
+      role: user.role || 'team_member',
+      phoneNumber: user.phone_number || '',
+      bio: user.bio || '',
+      location: user.location || '',
+    });
+    setShowCreateUserModal(true);
+  };
+  
+  const handleUpdateUser = async () => {
+    try {
+      if (!editingUser) return;
+      
+      const response = await companyUserManagementService.updateUser(editingUser.id, userForm);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'User updated successfully',
+        });
+        setShowCreateUserModal(false);
+        setEditingUser(null);
+        setUserForm({
+          email: '', password: '', username: '', fullName: '', role: 'team_member',
+          phoneNumber: '', bio: '', location: '',
+        });
+        fetchUsers();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update user',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to deactivate this user?')) {
+      return;
+    }
+    
+    try {
+      const response = await companyUserManagementService.deleteUser(userId);
+      if (response.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'User deactivated successfully',
+        });
+        fetchUsers();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to deactivate user',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const toggleProject = (projectId) => {
     setExpandedProjects(prev => {
@@ -291,6 +651,43 @@ const CompanyDashboardPage = () => {
         return 'bg-green-100 text-green-800';
       case 'rejected':
         return 'bg-red-100 text-red-800';
+      // Task statuses
+      case 'done':
+        return 'bg-green-100 text-green-800';
+      case 'in_progress':
+        return 'bg-blue-100 text-blue-800';
+      case 'review':
+        return 'bg-purple-100 text-purple-800';
+      case 'blocked':
+        return 'bg-red-100 text-red-800';
+      case 'todo':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'done':
+        return <CheckCircle2 className="h-4 w-4 text-green-600" />;
+      case 'in_progress':
+        return <PlayCircle className="h-4 w-4 text-blue-600" />;
+      case 'review':
+        return <FileCheck className="h-4 w-4 text-purple-600" />;
+      case 'blocked':
+        return <AlertCircle className="h-4 w-4 text-red-600" />;
+      default:
+        return <Circle className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case 'high':
+        return 'bg-red-100 text-red-800';
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -323,24 +720,27 @@ const CompanyDashboardPage = () => {
               section: 'dashboard',
               onClick: () => setActiveSection('dashboard'),
             },
-            {
+            // Only show Project Manager Agent if purchased
+            ...(purchasedModules.includes('project_manager_agent') ? [{
               label: 'Project Manager Agent',
               icon: BrainCircuit,
               section: 'project-manager',
               onClick: () => navigate('/project-manager/dashboard'),
-            },
-            {
+            }] : []),
+            // Only show Recruitment Agent if purchased
+            ...(purchasedModules.includes('recruitment_agent') ? [{
               label: 'Recruitment Agent',
               icon: UserCheck,
               section: 'recruitment',
               onClick: () => navigate('/recruitment/dashboard'),
-            },
-            {
+            }] : []),
+            // Only show Marketing Agent if purchased
+            ...(purchasedModules.includes('marketing_agent') ? [{
               label: 'Marketing Agent',
               icon: Megaphone,
               section: 'marketing',
               onClick: () => navigate('/marketing/dashboard'),
-            },
+            }] : []),
           ]}
         />
 
@@ -361,11 +761,32 @@ const CompanyDashboardPage = () => {
                   <Users className="h-4 w-4 mr-2" />
                   Applications
                 </TabsTrigger>
+                <TabsTrigger value="users">
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  Users
+                </TabsTrigger>
+                <TabsTrigger value="all-tasks">
+                  <ListTodo className="h-4 w-4 mr-2" />
+                  All Users Tasks
+                </TabsTrigger>
               </TabsList>
               {activeTab === 'jobs' && (
                 <Button onClick={() => setShowCreateJobModal(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Post New Job
+                </Button>
+              )}
+              {activeTab === 'users' && (
+                <Button onClick={() => {
+                  setEditingUser(null);
+                  setUserForm({
+                    email: '', password: '', username: '', fullName: '', role: 'team_member',
+                    phoneNumber: '', bio: '', location: '',
+                  });
+                  setShowCreateUserModal(true);
+                }}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add User
                 </Button>
               )}
             </div>
@@ -464,7 +885,20 @@ const CompanyDashboardPage = () => {
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <CardTitle className="text-lg">{project.name}</CardTitle>
+                                <div className="flex items-center justify-between gap-2">
+                                  <CardTitle className="text-lg">{project.name}</CardTitle>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditProject(project);
+                                    }}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </div>
                                 <div className="mt-2 flex items-center gap-3 flex-wrap">
                                   <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
                                     {project.status}
@@ -513,7 +947,20 @@ const CompanyDashboardPage = () => {
                                     >
                                       <div className="flex items-start justify-between gap-3">
                                         <div className="flex-1 min-w-0">
-                                          <p className="font-medium">{task.title}</p>
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-medium">{task.title}</p>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleEditTask(task);
+                                              }}
+                                              className="h-6 w-6 p-0"
+                                            >
+                                              <Edit className="h-3 w-3" />
+                                            </Button>
+                                          </div>
                                           {task.description && (
                                             <p className="text-sm text-muted-foreground mt-1">
                                               {task.description}
@@ -673,8 +1120,272 @@ const CompanyDashboardPage = () => {
                 </Card>
               )}
             </TabsContent>
+            
+            <TabsContent value="users" className="space-y-4">
+              {/* Search Bar */}
+              {users.length > 0 && (
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search users by name, email, or role..."
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {usersLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : users.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <UserCheck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium mb-2">No users yet</p>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Add users to your company to manage projects and tasks
+                    </p>
+                    <Button onClick={() => {
+                      setEditingUser(null);
+                      setUserForm({
+                        email: '', password: '', username: '', fullName: '', role: 'team_member',
+                        phoneNumber: '', bio: '', location: '',
+                      });
+                      setShowCreateUserModal(true);
+                    }}>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Add Your First User
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (() => {
+                // Filter users based on search query
+                const filteredUsers = users.filter(user => {
+                  if (!userSearchQuery) return true;
+                  const query = userSearchQuery.toLowerCase();
+                  return (
+                    (user.full_name && user.full_name.toLowerCase().includes(query)) ||
+                    (user.username && user.username.toLowerCase().includes(query)) ||
+                    (user.email && user.email.toLowerCase().includes(query)) ||
+                    (user.role && user.role.toLowerCase().includes(query))
+                  );
+                });
+                
+                if (filteredUsers.length === 0) {
+                  return (
+                    <Card>
+                      <CardContent className="py-12 text-center">
+                        <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                        <p className="text-lg font-medium mb-2">No users found</p>
+                        <p className="text-sm text-muted-foreground">
+                          Try adjusting your search query
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="grid gap-4">
+                      {filteredUsers.map((user) => (
+                        <Card key={user.id} className="hover:shadow-md transition-shadow">
+                          <CardHeader>
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <CardTitle className="text-lg">{user.full_name || user.username}</CardTitle>
+                                  {user.is_active === false && (
+                                    <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Mail className="h-4 w-4" />
+                                    {user.email}
+                                  </span>
+                                  <Badge variant="outline" className="capitalize">
+                                    {user.role?.replace('_', ' ')}
+                                  </Badge>
+                                  {user.location && (
+                                    <span className="flex items-center gap-1">
+                                      <MapPin className="h-4 w-4" />
+                                      {user.location}
+                                    </span>
+                                  )}
+                                  {user.phone_number && (
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-4 w-4" />
+                                      {user.phone_number}
+                                    </span>
+                                  )}
+                                </div>
+                                {user.created_by_company_user_name && (
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    Created by: <span className="font-medium">{user.created_by_company_user_name}</span>
+                                  </p>
+                                )}
+                                {user.date_joined && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Joined: {new Date(user.date_joined).toLocaleDateString()}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex gap-2 ml-4">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditUser(user)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardHeader>
+                          {user.bio && (
+                            <CardContent>
+                              <p className="text-sm text-muted-foreground line-clamp-2">{user.bio}</p>
+                            </CardContent>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </TabsContent>
+
+            <TabsContent value="all-tasks" className="space-y-4">
+              {/* Filters */}
+              <div className="flex items-center gap-4">
+                <Select value={taskStatusFilter} onValueChange={setTaskStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="todo">To Do</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="review">Review</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <Select value={taskUserFilter} onValueChange={setTaskUserFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Users</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.full_name || user.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {allUsersTasksLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : allUsersTasks.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <ListTodo className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium mb-2">No tasks found</p>
+                    <p className="text-sm text-muted-foreground">
+                      {taskStatusFilter !== 'all' || taskUserFilter !== 'all'
+                        ? 'No tasks match the selected filters'
+                        : 'No tasks have been assigned to your users yet'}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {allUsersTasks.map((task) => (
+                    <Card key={task.id} className="hover:shadow-md transition-shadow">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <CardTitle className="text-lg">{task.title}</CardTitle>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditTask(task)}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            {task.description && (
+                              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                                {task.description}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <Badge className={getStatusColor(task.status)}>
+                                {getStatusIcon(task.status)}
+                                <span className="ml-1 capitalize">{task.status.replace('_', ' ')}</span>
+                              </Badge>
+                              <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                                {task.priority} Priority
+                              </Badge>
+                              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                <FolderKanban className="h-4 w-4" />
+                                {task.project_name}
+                              </span>
+                              {task.assignee_name && (
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <User className="h-4 w-4" />
+                                  {task.assignee_name}
+                                </span>
+                              )}
+                              {task.due_date && (
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="h-4 w-4" />
+                                  {new Date(task.due_date).toLocaleDateString()}
+                                </span>
+                              )}
+                              {task.progress_percentage !== null && (
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <TrendingUp className="h-4 w-4" />
+                                  {task.progress_percentage}% complete
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
-          )}
+        )}
 
           {activeSection === 'project-manager' && (
             <div className="text-center py-12">
@@ -767,6 +1478,407 @@ const CompanyDashboardPage = () => {
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowCreateJobModal(false)}>
                   Cancel
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+        
+        {/* Create/Edit User Modal */}
+        <Dialog open={showCreateUserModal} onOpenChange={(open) => {
+          setShowCreateUserModal(open);
+          if (!open) {
+            setEditingUser(null);
+            setUserForm({
+              email: '', password: '', username: '', fullName: '', role: 'team_member',
+              phoneNumber: '', bio: '', location: '',
+            });
+          }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (editingUser) {
+                handleUpdateUser();
+              } else {
+                handleCreateUser();
+              }
+            }} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                    required
+                    disabled={!!editingUser}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={userForm.username}
+                    onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+                    placeholder="Auto-generated from email if not provided"
+                  />
+                </div>
+              </div>
+              
+              {!editingUser && (
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    required
+                    minLength={6}
+                  />
+                </div>
+              )}
+              
+              {editingUser && (
+                <div className="space-y-2">
+                  <Label htmlFor="password">New Password (leave blank to keep current)</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    minLength={6}
+                  />
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    value={userForm.fullName}
+                    onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role *</Label>
+                  <Select
+                    value={userForm.role}
+                    onValueChange={(value) => setUserForm({ ...userForm, role: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="project_manager">Project Manager</SelectItem>
+                      <SelectItem value="team_member">Team Member</SelectItem>
+                      <SelectItem value="developer">Developer</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                      <SelectItem value="internee">Internee</SelectItem>
+                      <SelectItem value="designer">Designer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Input
+                    id="phoneNumber"
+                    value={userForm.phoneNumber}
+                    onChange={(e) => setUserForm({ ...userForm, phoneNumber: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="location">Location</Label>
+                  <Input
+                    id="location"
+                    value={userForm.location}
+                    onChange={(e) => setUserForm({ ...userForm, location: e.target.value })}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="bio">Bio</Label>
+                <Textarea
+                  id="bio"
+                  value={userForm.bio}
+                  onChange={(e) => setUserForm({ ...userForm, bio: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowCreateUserModal(false);
+                    setEditingUser(null);
+                    setUserForm({
+                      email: '', password: '', username: '', fullName: '', role: 'team_member',
+                      phoneNumber: '', bio: '', location: '',
+                    });
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  {editingUser ? 'Update User' : 'Create User'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Project Modal */}
+        <Dialog open={showEditProjectModal} onOpenChange={(open) => {
+          setShowEditProjectModal(open);
+          if (!open) {
+            setEditingProject(null);
+            setProjectForm({
+              name: '',
+              description: '',
+              status: 'active',
+              priority: 'medium',
+              project_type: 'web_app',
+            });
+          }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Project</DialogTitle>
+              <DialogDescription>
+                Update project details. Changes will be saved immediately.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleUpdateProject} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="project-name">Project Name *</Label>
+                <Input
+                  id="project-name"
+                  value={projectForm.name}
+                  onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="project-description">Description</Label>
+                <Textarea
+                  id="project-description"
+                  value={projectForm.description}
+                  onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })}
+                  rows={4}
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="project-status">Status</Label>
+                  <Select
+                    value={projectForm.status}
+                    onValueChange={(value) => setProjectForm({ ...projectForm, status: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="planning">Planning</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="on_hold">On Hold</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="posted">Posted</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="review">Review</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="project-priority">Priority</Label>
+                  <Select
+                    value={projectForm.priority}
+                    onValueChange={(value) => setProjectForm({ ...projectForm, priority: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="project-type">Project Type</Label>
+                <Select
+                  value={projectForm.project_type}
+                  onValueChange={(value) => setProjectForm({ ...projectForm, project_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="website">Website</SelectItem>
+                    <SelectItem value="mobile_app">Mobile App</SelectItem>
+                    <SelectItem value="web_app">Web Application</SelectItem>
+                    <SelectItem value="ai_bot">AI Bot</SelectItem>
+                    <SelectItem value="integration">Integration</SelectItem>
+                    <SelectItem value="marketing">Marketing</SelectItem>
+                    <SelectItem value="database">Database</SelectItem>
+                    <SelectItem value="consulting">Consulting</SelectItem>
+                    <SelectItem value="ai_system">AI System</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowEditProjectModal(false);
+                    setEditingProject(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Update Project
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Task Modal */}
+        <Dialog open={showEditTaskModal} onOpenChange={(open) => {
+          setShowEditTaskModal(open);
+          if (!open) {
+            setEditingTask(null);
+            setTaskForm({
+              title: '',
+              description: '',
+              priority: 'medium',
+              status: 'todo',
+              assignee_id: 'none',
+            });
+          }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Task</DialogTitle>
+              <DialogDescription>
+                Update task details including assignment, priority, and status.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleUpdateTask} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="task-title">Task Title *</Label>
+                <Input
+                  id="task-title"
+                  value={taskForm.title}
+                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="task-description">Description</Label>
+                <Textarea
+                  id="task-description"
+                  value={taskForm.description}
+                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                  rows={4}
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="task-priority">Priority</Label>
+                  <Select
+                    value={taskForm.priority}
+                    onValueChange={(value) => setTaskForm({ ...taskForm, priority: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="task-status">Status</Label>
+                  <Select
+                    value={taskForm.status}
+                    onValueChange={(value) => setTaskForm({ ...taskForm, status: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todo">To Do</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="review">Review</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="task-assignee">Assign To</Label>
+                <Select
+                  value={taskForm.assignee_id || 'none'}
+                  onValueChange={(value) => setTaskForm({ ...taskForm, assignee_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select user (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None (Unassign)</SelectItem>
+                    {availableUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.full_name} ({user.email}) - {user.role}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowEditTaskModal(false);
+                    setEditingTask(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Update Task
                 </Button>
               </div>
             </form>

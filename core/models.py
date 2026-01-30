@@ -302,15 +302,16 @@ class UserProfile(models.Model):
         ('team_member', 'Team Member'),
         ('developer', 'Developer'),
         ('viewer', 'Viewer'),
-        ('recruitment_agent', 'Recruitment Agent'),
-        ('frontline_agent', 'Frontline Agent'),
-        ('marketing_agent', 'Marketing Agent'),
+        ('internee', 'Internee'),
+        ('designer', 'Designer'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='team_member')
     # Company association (required for project_manager role)
     company = models.ForeignKey('Company', on_delete=models.SET_NULL, null=True, blank=True, related_name='user_profiles')
+    # Track which company user created this user
+    created_by_company_user = models.ForeignKey('CompanyUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_users', help_text='Company user who created this user')
     # Additional fields from payPerProject
     company_name = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True, help_text="Phone number with country code")
@@ -567,6 +568,54 @@ class CompanyUser(models.Model):
     def is_marketing_agent(self):
         """Check if user is a marketing agent"""
         return self.role == 'marketing_agent'
+
+
+class CompanyModulePurchase(models.Model):
+    """Track which modules a company has purchased"""
+    MODULE_CHOICES = [
+        ('recruitment_agent', 'Recruitment Agent'),
+        ('marketing_agent', 'Marketing Agent'),
+        ('project_manager_agent', 'Project Manager Agent'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('cancelled', 'Cancelled'),
+        ('expired', 'Expired'),
+        ('trial', 'Trial'),
+    ]
+    
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='module_purchases')
+    module_name = models.CharField(max_length=50, choices=MODULE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    price_paid = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Price paid at time of purchase")
+    purchased_by = models.ForeignKey(CompanyUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='purchases_made')
+    purchased_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True, help_text="Subscription expiration date (null for lifetime)")
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['company', 'module_name']
+        ordering = ['-purchased_at']
+        verbose_name = 'Company Module Purchase'
+        verbose_name_plural = 'Company Module Purchases'
+        indexes = [
+            models.Index(fields=['company', 'module_name', 'status']),
+            models.Index(fields=['status', 'expires_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.company.name} - {self.get_module_name_display()} ({self.status})"
+    
+    def is_active(self):
+        """Check if purchase is currently active"""
+        if self.status != 'active':
+            return False
+        if self.expires_at and timezone.now() > self.expires_at:
+            return False
+        return True
 
 
 class CompanyRegistrationToken(models.Model):

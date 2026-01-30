@@ -329,19 +329,22 @@ WSGI_APPLICATION = 'project_manager_ai.wsgi.application'
 # --------------------
 # Database (SQL Server Express)
 # --------------------
-
 DATABASES = {
     'default': {
         'ENGINE': 'mssql',
-        'NAME': os.getenv('DB_NAME', 'project_manager_db'),
-        # 'HOST': r'localhost\SQLExpress',
-        'HOST': r'DESKTOP-JMIOEV2',
+        'NAME': os.getenv('DB_NAME'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
         'OPTIONS': {
             'driver': 'ODBC Driver 17 for SQL Server',
-            'trusted_connection': 'yes',
+            'extra_params': 'TrustServerCertificate=yes',  # Trust server certificate
         },
-
-    }}
+        'CONN_MAX_AGE': 0,
+        'TIME_ZONE': None,
+    }
+}
 
 # --------------------
 # Password validation
@@ -457,10 +460,9 @@ SITE_URL = os.getenv('SITE_URL', 'https://fiddly-uncouth-ryan.ngrok-free.dev')
 # --------------------
 # CORS Configuration
 # --------------------
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# Read CORS allowed origins from .env (comma-separated list)
+cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000')
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
 
 # Allow credentials (cookies, authorization headers, etc.)
 CORS_ALLOW_CREDENTIALS = True
@@ -487,6 +489,15 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
+
+# --------------------
+# Stripe (module purchase payments – test credentials)
+# --------------------
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', 'sk_test_placeholder')
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', 'pk_test_placeholder')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', 'whsec_placeholder')
+# Frontend base URL for Checkout success/cancel redirects (Vite dev default)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')
 
 # --------------------
 # Celery Configuration (for Marketing Automation)
@@ -623,4 +634,3 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
     ],
 }
-

@@ -16,6 +16,9 @@ from api.views import analytics
 from api.views import notification
 from api.views import company
 from api.views import company_auth
+from api.views import company_users
+from api.views import user_tasks
+from api.views import company_user_tasks
 from api.views import career
 from api.views import applicant
 from api.views import quiz
@@ -25,8 +28,11 @@ from api.views import white_label
 from api.views import company_jobs
 from api.views import pm_agent
 from api.views import company_dashboard
+from api.views import company_projects_tasks
+from api.views import user_project_manager
 from api.views import recruitment_agent
 from api.views import marketing_agent
+from api.views import module_purchase
 from api.views.health import health_check
 
 app_name = 'api'
@@ -46,6 +52,21 @@ urlpatterns = [
     re_path(r'^users/profile/?$', user.get_profile, name='get_profile'),  # GET
     re_path(r'^users/profile/update/?$', user.update_profile, name='update_profile'),  # PUT
     re_path(r'^users/dashboard/?$', user.get_dashboard_stats, name='get_dashboard_stats'),
+    
+    # User Tasks endpoints (for regular users to manage their tasks)
+    re_path(r'^user/tasks/?$', user_tasks.get_my_tasks, name='get_my_tasks'),  # GET
+    re_path(r'^user/projects/?$', user_tasks.get_my_projects, name='get_my_projects'),  # GET
+    re_path(r'^user/tasks/(?P<taskId>\d+)/status/?$', user_tasks.update_task_status, name='update_task_status'),  # PATCH
+    re_path(r'^user/tasks/(?P<taskId>\d+)/progress/?$', user_tasks.update_task_progress, name='update_task_progress'),  # PATCH
+    
+    # Project Manager endpoints (for users with project_manager role)
+    re_path(r'^user/project-manager/projects-tasks/?$', user_project_manager.get_project_manager_projects_tasks, name='get_project_manager_projects_tasks'),  # GET
+    re_path(r'^user/project-manager/projects/?$', user_project_manager.get_project_manager_projects, name='get_project_manager_projects'),  # GET
+    re_path(r'^user/project-manager/projects/create/?$', user_project_manager.create_project_manager_project, name='create_project_manager_project'),  # POST
+    re_path(r'^user/project-manager/projects/(?P<project_id>\d+)/update/?$', user_project_manager.update_project_manager_project, name='update_project_manager_project'),  # PUT/PATCH
+    re_path(r'^user/project-manager/tasks/create/?$', user_project_manager.create_project_manager_task, name='create_project_manager_task'),  # POST
+    re_path(r'^user/project-manager/tasks/(?P<task_id>\d+)/update/?$', user_project_manager.update_project_manager_task, name='update_project_manager_task'),  # PUT/PATCH
+    re_path(r'^user/project-manager/company-users/?$', user_project_manager.get_company_users_for_pm, name='get_company_users_for_pm'),  # GET
     
     # Project endpoints
     re_path(r'^projects/?$', project.list_projects, name='list_projects'),
@@ -115,6 +136,14 @@ urlpatterns = [
     re_path(r'^companies/(?P<companyId>\d+)/tokens/?$', company.get_company_tokens, name='get_company_tokens'),  # GET
     re_path(r'^companies/(?P<companyId>\d+)/tokens/generate/?$', company.generate_company_token, name='generate_company_token'),  # POST
     
+    # Company User Management endpoints (for company users to manage regular users)
+    re_path(r'^company/users/create/?$', company_users.create_user, name='company_create_user'),  # POST
+    re_path(r'^company/users/?$', company_users.list_users, name='company_list_users'),  # GET
+    re_path(r'^company/users/(?P<userId>\d+)/?$', company_users.get_user, name='company_get_user'),  # GET
+    re_path(r'^company/users/(?P<userId>\d+)/update/?$', company_users.update_user, name='company_update_user'),  # PUT/PATCH
+    re_path(r'^company/users/(?P<userId>\d+)/delete/?$', company_users.delete_user, name='company_delete_user'),  # DELETE
+    re_path(r'^company/users/tasks/?$', company_user_tasks.get_all_users_tasks, name='company_get_all_users_tasks'),  # GET
+    
     # Company Auth endpoints
     re_path(r'^company/verify-token/?$', company_auth.verify_registration_token, name='verify_registration_token'),
     re_path(r'^company/register/?$', company_auth.register_company_user, name='register_company_user'),
@@ -142,6 +171,11 @@ urlpatterns = [
     re_path(r'^project-manager/dashboard/?$', company_dashboard.project_manager_dashboard, name='pm_dashboard'),
     # Company User Projects endpoint
     re_path(r'^company/projects/?$', company_dashboard.get_company_user_projects, name='get_company_user_projects'),
+    re_path(r'^company/projects/(?P<project_id>\d+)/update/?$', company_projects_tasks.update_company_project, name='update_company_project'),
+    
+    # Company User Tasks endpoints
+    re_path(r'^company/tasks/(?P<task_id>\d+)/update/?$', company_projects_tasks.update_company_task, name='update_company_task'),
+    re_path(r'^company/users/for-assignment/?$', company_projects_tasks.get_company_users_for_assignment, name='get_company_users_for_assignment'),
 
     # Project Manager AI Agent endpoints (token-auth friendly)
     re_path(r'^project-manager/ai/project-pilot/?$', pm_agent.project_pilot, name='pm_project_pilot'),
@@ -185,6 +219,8 @@ urlpatterns = [
     re_path(r'^recruitment/cv-records/?$', recruitment_agent.list_cv_records, name='recruitment_list_cv_records'),  # GET
     re_path(r'^recruitment/settings/email/?$', recruitment_agent.email_settings, name='recruitment_email_settings'),  # GET/POST
     re_path(r'^recruitment/settings/interview/?$', recruitment_agent.interview_settings, name='recruitment_interview_settings'),  # GET/POST
+    re_path(r'^recruitment/settings/qualification/?$', recruitment_agent.qualification_settings, name='recruitment_qualification_settings'),  # GET/POST
+    re_path(r'^recruitment/analytics/?$', recruitment_agent.recruitment_analytics, name='recruitment_analytics'),  # GET
     
     # Marketing Agent endpoints (Company User)
     re_path(r'^marketing/dashboard/?$', marketing_agent.marketing_dashboard, name='marketing_dashboard'),  # GET
@@ -196,4 +232,13 @@ urlpatterns = [
     re_path(r'^marketing/outreach-campaign/?$', marketing_agent.outreach_campaign, name='marketing_outreach_campaign'),  # POST
     re_path(r'^marketing/document-authoring/?$', marketing_agent.document_authoring, name='marketing_document_authoring'),  # POST
     re_path(r'^marketing/notifications/?$', marketing_agent.get_notifications, name='marketing_get_notifications'),  # GET
+    
+    # Module Purchase endpoints
+    re_path(r'^modules/prices/?$', module_purchase.get_module_prices, name='get_module_prices'),  # GET (public)
+    re_path(r'^modules/purchased/?$', module_purchase.get_purchased_modules, name='get_purchased_modules'),  # GET
+    re_path(r'^modules/purchase/?$', module_purchase.purchase_module, name='purchase_module'),  # POST (legacy)
+    re_path(r'^modules/checkout/?$', module_purchase.create_checkout_session, name='create_checkout_session'),  # POST
+    re_path(r'^modules/stripe-webhook/?$', module_purchase.stripe_webhook, name='stripe_webhook'),  # POST (raw, no auth)
+    re_path(r'^modules/verify-session/?$', module_purchase.verify_session, name='verify_session'),  # POST (public)
+    re_path(r'^modules/(?P<module_name>[a-z_]+)/access/?$', module_purchase.check_module_access, name='check_module_access'),  # GET
 ]

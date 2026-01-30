@@ -38,12 +38,28 @@ const LoginPage = () => {
     setIsLoading(true);
     
     try {
-      await login(email, password);
+      const response = await login(email, password);
+      
+      // Check if user was created by a company user
+      const userData = response?.data?.user;
+      const isCompanyCreatedUser = userData?.createdByCompanyUser === true;
+      
       toast({
         title: '✅ Login Successful',
-        description: 'Redirecting to admin dashboard...',
+        description: isCompanyCreatedUser ? 'Redirecting to your dashboard...' : 'Redirecting to admin dashboard...',
       });
-      navigate(from, { replace: true });
+      
+      // Redirect based on user type
+      if (isCompanyCreatedUser) {
+        // User was created by company user - redirect to user dashboard
+        navigate('/user/dashboard', { replace: true });
+      } else if (userData?.userType === 'admin' || userData?.is_staff) {
+        // Admin user - redirect to admin dashboard
+        navigate(from, { replace: true });
+      } else {
+        // Regular user - redirect to user dashboard
+        navigate('/user/dashboard', { replace: true });
+      }
     } catch (error) {
       toast({
         title: '❌ Login Failed',
