@@ -11,8 +11,7 @@ python-dotenv==1.0.0
 groq==0.9.0 --prefer-binary
 openai==1.0.0 --prefer-binary
 huggingface_hub==0.20.0 --prefer-binary
-spacy==3.7.5 --prefer-binary
-blis==0.10.10 --prefer-binary
+
 numpy==1.26.4 --prefer-binary
 
 # PDF / Docs / Excel / PPT
