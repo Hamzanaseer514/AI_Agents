@@ -1,6 +1,6 @@
 
 import React from 'react';
-    import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+    import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
     import { AuthProvider } from '@/contexts/AuthContext';
     import HomePage from '@/pages/HomePage';
     import HowItWorksPage from '@/pages/HowItWorksPage';
@@ -102,7 +102,17 @@ import { useTranslation } from 'react-i18next';
             <Route path="/marketing/dashboard" element={<MarketingAgentPage />} />
             
             {/* Recruitment Agent routes without header/footer */}
+            <Route path="/recruitment" element={<Navigate to="/recruitment/dashboard" replace />} />
             <Route path="/recruitment/dashboard" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/cvprocessing" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/analytics" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/job-descriptions" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/candidates" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/interviews" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/settings" element={<Navigate to="/recruitment/settings/email" replace />} />
+            <Route path="/recruitment/settings/email" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/settings/interview" element={<RecruitmentAgentPage />} />
+            <Route path="/recruitment/settings/qualification" element={<RecruitmentAgentPage />} />
             
             {/* Module purchase Stripe success (public) */}
             <Route path="/module-purchase-success" element={<PublicLayout><ModulePurchaseSuccessPage /></PublicLayout>} />

@@ -12,6 +12,9 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django.db.models import Q
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.conf import settings
 
 from recruitment_agent.agents.cv_parser import CVParserAgent
 from recruitment_agent.agents.summarization import SummarizationAgent
@@ -304,6 +307,16 @@ def process_cvs(request):
             # Get interview agent for auto-scheduling
             interview_agent = agents.get('interview_agent')
             
+            # Use job's default interview type (Online/Onsite) for auto-scheduled invitations
+            auto_interview_type = 'ONLINE'
+            if job_desc:
+                job_int_settings = RecruiterInterviewSettings.objects.filter(
+                    company_user=company_user,
+                    job=job_desc
+                ).first()
+                if job_int_settings and getattr(job_int_settings, 'default_interview_type', None):
+                    auto_interview_type = job_int_settings.default_interview_type
+            
             # Get company user email settings for interview defaults
             try:
                 email_settings_obj = RecruiterEmailSettings.objects.get(company_user=company_user)
@@ -368,7 +381,7 @@ def process_cvs(request):
                                 candidate_name=candidate_name,
                                 candidate_email=candidate_email,
                                 job_role=job_role,
-                                interview_type='ONLINE',  # Default to ONLINE
+                                interview_type=auto_interview_type,  # From job's interview settings
                                 candidate_phone=candidate_phone,
                                 cv_record_id=result.get('record_id'),
                                 recruiter_id=None,  # Not using Django User
@@ -424,6 +437,118 @@ def process_cvs(request):
         return Response({
             'status': 'error',
             'message': f'Processing failed: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Shorter prompt = fewer input tokens. Output is plain text with section labels, not JSON.
+# Skills appear in both DESCRIPTION (full text) and REQUIREMENTS (bullet list).
+GENERATE_JOB_SYSTEM_PROMPT = """Generate a job posting from the user's prompt. Reply with ONLY the following sections. Use the exact labels.
+
+TITLE:
+<one line job title>
+
+TYPE:
+<exactly one: Full-time, Part-time, Contract, Internship>
+
+LOCATION:
+<e.g. Remote or city; one line>
+
+DEPARTMENT:
+<e.g. Engineering; one line>
+
+DESCRIPTION:
+Write the full job description in one block. Include:
+1) First paragraph: We are seeking a skilled [role] with experience in...
+2) Second paragraph: The role requires strong expertise in...
+3) Third paragraph: The developer will be responsible for... A strong understanding of best practices and scalable architecture is essential. Ability to work independently and in a team.
+4) Then add "Key Skills & Competencies:" followed by a bullet list of skills, technologies, and practices (one per line).
+
+REQUIREMENTS:
+Repeat the same Key Skills & Competencies bullet list here (skills, technologies, practices; one per line). This fills the requirements field separately.
+
+Use the section labels exactly as shown."""
+
+
+def _parse_generated_job_text(raw: str) -> Dict[str, str]:
+    """Parse labeled sections. Description has full text (incl. skills); requirements has skills list."""
+    raw = (raw or '').strip()
+    result = {
+        'title': '',
+        'type': 'Full-time',
+        'location': '',
+        'department': '',
+        'description': '',
+        'requirements': '',
+    }
+    markers = ['TITLE:', 'TYPE:', 'LOCATION:', 'DEPARTMENT:', 'DESCRIPTION:', 'REQUIREMENTS:']
+    for i, marker in enumerate(markers):
+        key = marker.rstrip(':').lower()
+        start = raw.find(marker)
+        if start == -1:
+            continue
+        start += len(marker)
+        end = raw.find(markers[i + 1], start) if i + 1 < len(markers) else len(raw)
+        value = raw[start:end].strip()
+        if key == 'title':
+            result['title'] = value.split('\n')[0].strip()
+        elif key == 'type':
+            result['type'] = value.split('\n')[0].strip() or 'Full-time'
+        elif key == 'location':
+            result['location'] = value.split('\n')[0].strip()
+        elif key == 'department':
+            result['department'] = value.split('\n')[0].strip()
+        elif key == 'description':
+            result['description'] = value.strip()
+        else:
+            result['requirements'] = value.strip()
+    if result['type'] not in ('Full-time', 'Part-time', 'Contract', 'Internship'):
+        result['type'] = 'Full-time'
+    return result
+
+
+@api_view(['POST'])
+@authentication_classes([CompanyUserTokenAuthentication])
+@permission_classes([IsCompanyUserOnly])
+def generate_job_description(request):
+    """Generate job title and description from a user prompt (fills form; user saves to create)."""
+    try:
+        prompt = (request.data.get('prompt') or '').strip()
+        if not prompt:
+            return Response({
+                'status': 'error',
+                'message': 'Prompt is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        agents = get_agents()
+        groq_client = agents['job_desc_agent'].groq_client
+        raw_text = groq_client.send_prompt_text(GENERATE_JOB_SYSTEM_PROMPT, prompt)
+        parsed = _parse_generated_job_text(raw_text)
+
+        title = (parsed.get('title') or '').strip()
+        description = (parsed.get('description') or '').strip()
+        requirements = (parsed.get('requirements') or '').strip() or ''
+        location = (parsed.get('location') or '').strip() or None
+        department = (parsed.get('department') or '').strip() or None
+        job_type = (parsed.get('type') or 'Full-time').strip()
+        if job_type not in ('Full-time', 'Part-time', 'Contract', 'Internship'):
+            job_type = 'Full-time'
+
+        return Response({
+            'status': 'success',
+            'data': {
+                'title': title or 'Untitled Position',
+                'description': description or '',
+                'requirements': requirements or '',
+                'location': location or '',
+                'department': department or '',
+                'type': job_type,
+            }
+        })
+    except Exception as e:
+        logger.exception(f"Error generating job description: {e}")
+        return Response({
+            'status': 'error',
+            'message': getattr(e, 'message', None) or str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -657,12 +782,18 @@ def list_interviews(request):
         company_user = request.user
         
         status_filter = request.query_params.get('status')
+        outcome_filter = request.query_params.get('outcome')
         interviews = Interview.objects.filter(company_user=company_user).select_related(
             'cv_record', 'cv_record__job_description'
         )
         
         if status_filter:
             interviews = interviews.filter(status=status_filter)
+        if outcome_filter is not None and outcome_filter != '':
+            if outcome_filter.upper() == 'NOT_SET':
+                interviews = interviews.filter(Q(outcome__isnull=True) | Q(outcome=''))
+            else:
+                interviews = interviews.filter(outcome=outcome_filter.upper())
         
         interviews = interviews.order_by('-created_at')[:100]  # Limit to 100 most recent
         
@@ -679,9 +810,10 @@ def list_interviews(request):
                 'candidate_email': interview.candidate_email,
                 'candidate_phone': interview.candidate_phone,
                 'job_role': interview.job_role,
-                'job_title': job_title,  # Add job title from job description
+                'job_title': job_title,
                 'interview_type': interview.interview_type,
                 'status': interview.status,
+                'outcome': interview.outcome or '',
                 'scheduled_datetime': interview.scheduled_datetime.isoformat() if interview.scheduled_datetime else None,
                 'selected_slot': interview.selected_slot,
                 'confirmation_token': interview.confirmation_token,
@@ -698,6 +830,213 @@ def list_interviews(request):
         return Response({
             'status': 'error',
             'message': f'Failed to list interviews: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+VALID_INTERVIEW_STATUSES = {'PENDING', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'RESCHEDULED'}
+VALID_INTERVIEW_OUTCOMES = {'', 'ONSITE_INTERVIEW', 'HIRED', 'PASSED', 'REJECTED'}
+
+OUTCOME_EMAIL_LABELS = {
+    'ONSITE_INTERVIEW': 'Onsite Interview',
+    'HIRED': 'Hired',
+    'PASSED': 'Passed',
+    'REJECTED': 'Rejected',
+}
+
+
+@api_view(['PATCH', 'PUT'])
+@authentication_classes([CompanyUserTokenAuthentication])
+@permission_classes([IsCompanyUserOnly])
+def update_interview(request, interview_id):
+    """Update interview status and/or outcome (company only)"""
+    try:
+        company_user = request.user
+        interview = Interview.objects.filter(
+            id=interview_id,
+            company_user=company_user
+        ).first()
+
+        if not interview:
+            return Response({
+                'status': 'error',
+                'message': 'Interview not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        new_outcome = request.data.get('outcome')
+
+        if new_status is not None:
+            new_status = (new_status or '').strip().upper()
+            if new_status and new_status not in VALID_INTERVIEW_STATUSES:
+                return Response({
+                    'status': 'error',
+                    'message': f'Invalid status. Must be one of: {", ".join(VALID_INTERVIEW_STATUSES)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            interview.status = new_status or interview.status
+
+        outcome_updated = False
+        if new_outcome is not None:
+            new_outcome = (new_outcome or '').strip().upper()
+            if new_outcome and new_outcome not in VALID_INTERVIEW_OUTCOMES:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid outcome. Must be one of: ONSITE_INTERVIEW, HIRED, PASSED, REJECTED, or empty'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            if new_outcome:
+                outcome_updated = True
+            interview.outcome = new_outcome if new_outcome else None
+
+        interview.save()
+
+        # Send simple outcome email to candidate when decision is changed
+        if outcome_updated and interview.outcome and interview.candidate_email:
+            try:
+                job_title_for_email = None
+                if interview.cv_record and interview.cv_record.job_description:
+                    job_title_for_email = interview.cv_record.job_description.title
+                if not job_title_for_email and interview.job_role:
+                    job_title_for_email = (interview.job_role.split('\n')[0] or interview.job_role).strip()[:80]
+                if not job_title_for_email:
+                    job_title_for_email = 'the position'
+                outcome_label = OUTCOME_EMAIL_LABELS.get(interview.outcome, interview.outcome.replace('_', ' ').title())
+                outcome_class = 'hired' if interview.outcome == 'HIRED' else ('rejected' if interview.outcome == 'REJECTED' else ('onsite' if interview.outcome == 'ONSITE_INTERVIEW' else ''))
+                context = {
+                    'candidate_name': interview.candidate_name,
+                    'job_title': job_title_for_email,
+                    'outcome_label': outcome_label,
+                    'outcome_class': outcome_class,
+                }
+                subject = f"Interview outcome – {job_title_for_email}"
+                message = render_to_string('recruitment_agent/emails/interview_outcome.txt', context)
+                html_message = render_to_string('recruitment_agent/emails/interview_outcome.html', context)
+                from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[interview.candidate_email],
+                    html_message=html_message,
+                    fail_silently=True,
+                )
+                logger.info(f"Outcome email sent to {interview.candidate_email} for interview {interview.id} ({interview.outcome})")
+            except Exception as mail_err:
+                logger.warning(f"Failed to send outcome email to {interview.candidate_email}: {mail_err}")
+
+        job_title = None
+        if interview.cv_record and interview.cv_record.job_description:
+            job_title = interview.cv_record.job_description.title
+
+        return Response({
+            'status': 'success',
+            'message': 'Interview updated',
+            'data': {
+                'id': interview.id,
+                'status': interview.status,
+                'outcome': interview.outcome or '',
+                'candidate_name': interview.candidate_name,
+                'job_title': job_title,
+            }
+        })
+    except Exception as e:
+        logger.exception(f"Error updating interview: {e}")
+        return Response({
+            'status': 'error',
+            'message': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@authentication_classes([CompanyUserTokenAuthentication])
+@permission_classes([IsCompanyUserOnly])
+def get_reschedule_slots(request, interview_id):
+    """Get available slots for rescheduling an interview (company only)"""
+    try:
+        company_user = request.user
+        interview = Interview.objects.filter(
+            id=interview_id,
+            company_user=company_user
+        ).first()
+
+        if not interview:
+            return Response({
+                'status': 'error',
+                'message': 'Interview not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        agents = get_agents()
+        interview_agent = agents['interview_agent']
+        result = interview_agent.get_reschedule_slots(interview_id)
+
+        if not result.get('success'):
+            return Response({
+                'status': 'error',
+                'message': result.get('error', 'Failed to get slots')
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'status': 'success',
+            'data': {
+                'slots': result.get('slots', []),
+                'message': result.get('message'),
+            }
+        })
+    except Exception as e:
+        logger.exception(f"Error getting reschedule slots: {e}")
+        return Response({
+            'status': 'error',
+            'message': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@authentication_classes([CompanyUserTokenAuthentication])
+@permission_classes([IsCompanyUserOnly])
+def reschedule_interview(request, interview_id):
+    """Reschedule an interview to a new slot; sends new invitation to candidate (company only)"""
+    try:
+        company_user = request.user
+        interview = Interview.objects.filter(
+            id=interview_id,
+            company_user=company_user
+        ).first()
+
+        if not interview:
+            return Response({
+                'status': 'error',
+                'message': 'Interview not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        new_slot_datetime = request.data.get('new_slot_datetime')
+        if not new_slot_datetime:
+            return Response({
+                'status': 'error',
+                'message': 'new_slot_datetime is required (ISO format)'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        agents = get_agents()
+        interview_agent = agents['interview_agent']
+        result = interview_agent.reschedule_interview(interview_id, new_slot_datetime)
+
+        if not result.get('success'):
+            return Response({
+                'status': 'error',
+                'message': result.get('error', 'Reschedule failed')
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'status': 'success',
+            'message': 'Interview rescheduled; candidate has been notified.',
+            'data': {
+                'interview_id': result.get('interview_id'),
+                'scheduled_datetime': result.get('scheduled_datetime'),
+                'selected_slot': result.get('selected_slot'),
+            }
+        })
+    except Exception as e:
+        logger.exception(f"Error rescheduling interview: {e}")
+        return Response({
+            'status': 'error',
+            'message': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -736,17 +1075,25 @@ def schedule_interview(request):
                 'message': 'Invalid interview_type. Must be ONLINE or ONSITE'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Verify CV record belongs to company user if provided
+        # Verify CV record belongs to company user if provided; use job's interview type if set
+        interview_type_to_use = interview_type
         if cv_record_id:
             cv_record = CVRecord.objects.filter(
                 id=cv_record_id,
                 job_description__company_user=company_user
-            ).first()
+            ).select_related('job_description').first()
             if not cv_record:
                 return Response({
                     'status': 'error',
                     'message': 'CV record not found or access denied'
                 }, status=status.HTTP_404_NOT_FOUND)
+            if cv_record.job_description_id:
+                job_settings = RecruiterInterviewSettings.objects.filter(
+                    company_user=company_user,
+                    job_id=cv_record.job_description_id
+                ).first()
+                if job_settings and getattr(job_settings, 'default_interview_type', None):
+                    interview_type_to_use = job_settings.default_interview_type
         
         # Get company user email settings for interview defaults
         try:
@@ -769,12 +1116,12 @@ def schedule_interview(request):
             max_followups = 3
             min_between = 24
         
-        # Schedule interview - pass company_user_id and email settings
+        # Schedule interview - use job's default_interview_type when available
         result = interview_agent.schedule_interview(
             candidate_name=candidate_name,
             candidate_email=candidate_email,
             job_role=job_role,
-            interview_type=interview_type,
+            interview_type=interview_type_to_use,
             candidate_phone=candidate_phone,
             cv_record_id=cv_record_id,
             recruiter_id=None,  # Not using Django User
@@ -861,12 +1208,26 @@ def get_interview_details(request, interview_id):
 @authentication_classes([CompanyUserTokenAuthentication])
 @permission_classes([IsCompanyUserOnly])
 def list_cv_records(request):
-    """List CV records for the company user"""
+    """List CV records for the company user with server-side pagination"""
     try:
         company_user = request.user
         
         job_id = request.query_params.get('job_id')
         decision = request.query_params.get('decision')  # INTERVIEW, HOLD, REJECT
+        page_param = request.query_params.get('page')
+        page_size_param = request.query_params.get('page_size')
+        
+        paginate = page_param is not None and page_size_param is not None
+        if paginate:
+            try:
+                page = max(1, int(page_param))
+                page_size = min(max(1, int(page_size_param)), 100)
+            except (ValueError, TypeError):
+                page = 1
+                page_size = 10
+        else:
+            page = 1
+            page_size = None
         
         cv_records = CVRecord.objects.filter(
             job_description__company_user=company_user
@@ -879,6 +1240,11 @@ def list_cv_records(request):
             cv_records = cv_records.filter(qualification_decision=decision)
         
         cv_records = cv_records.order_by('-rank', '-created_at')
+        total = cv_records.count()
+        
+        if paginate and page_size is not None:
+            start = (page - 1) * page_size
+            cv_records = cv_records[start:start + page_size]
         
         records_list = []
         for cv in cv_records:
@@ -904,10 +1270,15 @@ def list_cv_records(request):
                 'created_at': cv.created_at.isoformat() if cv.created_at else None,
             })
         
-        return Response({
+        payload = {
             'status': 'success',
-            'data': records_list
-        })
+            'data': records_list,
+            'total': total,
+        }
+        if paginate:
+            payload['page'] = page
+            payload['page_size'] = page_size
+        return Response(payload)
     
     except Exception as e:
         logger.error(f"Error listing CV records: {e}")
@@ -1036,6 +1407,7 @@ def interview_settings(request):
                         'start_time': '09:00',
                         'end_time': '17:00',
                         'interview_time_gap': 30,
+                        'default_interview_type': 'ONLINE',
                         'time_slots_json': [],
                     }
                 })
@@ -1050,6 +1422,7 @@ def interview_settings(request):
                     'start_time': settings.start_time.strftime('%H:%M') if settings.start_time else '09:00',
                     'end_time': settings.end_time.strftime('%H:%M') if settings.end_time else '17:00',
                     'interview_time_gap': settings.interview_time_gap,
+                    'default_interview_type': getattr(settings, 'default_interview_type', 'ONLINE') or 'ONLINE',
                     'time_slots_json': settings.time_slots_json,
                 }
             })
@@ -1064,6 +1437,7 @@ def interview_settings(request):
                         'start_time': '09:00',
                         'end_time': '17:00',
                         'interview_time_gap': 30,
+                        'default_interview_type': 'ONLINE',
                         'time_slots_json': [],
                     }
                 )
@@ -1076,9 +1450,17 @@ def interview_settings(request):
                         'start_time': '09:00',
                         'end_time': '17:00',
                         'interview_time_gap': 30,
+                        'default_interview_type': 'ONLINE',
                         'time_slots_json': [],
                     }
                 )
+            
+            if 'default_interview_type' in request.data:
+                val = (request.data.get('default_interview_type') or '').strip().upper()
+                if val in ('ONLINE', 'ONSITE'):
+                    settings.default_interview_type = val
+                else:
+                    settings.default_interview_type = 'ONLINE'
             
             update_availability_only = request.data.get('update_availability', False)
             
@@ -1347,12 +1729,18 @@ def recruitment_analytics(request):
         days = int(request.query_params.get('days', 30))
         months = int(request.query_params.get('months', 6))
         
-        # Get job filter (optional)
-        job_id = request.query_params.get('job_id', None)
+        # Get job filter (optional): when set, analytics are for that job only
+        job_id_param = request.query_params.get('job_id', None)
         job_filter = None
-        if job_id:
+        if job_id_param not in (None, '', 'all'):
             try:
+                job_id = int(job_id_param)
                 job_filter = JobDescription.objects.get(id=job_id, company_user=company_user)
+            except (ValueError, TypeError):
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid job_id'
+                }, status=status.HTTP_400_BAD_REQUEST)
             except JobDescription.DoesNotExist:
                 return Response({
                     'status': 'error',
@@ -1376,8 +1764,13 @@ def recruitment_analytics(request):
         total_cvs = CVRecord.objects.filter(cv_base_filter).count()
         
         total_interviews = Interview.objects.filter(interview_base_filter).count()
-        total_jobs = JobDescription.objects.filter(company_user=company_user).count()
-        active_jobs = JobDescription.objects.filter(company_user=company_user, is_active=True).count()
+        # When filtering by job: show 1 job (that job's active state). Otherwise all jobs.
+        if job_filter:
+            total_jobs = 1
+            active_jobs = 1 if job_filter.is_active else 0
+        else:
+            total_jobs = JobDescription.objects.filter(company_user=company_user).count()
+            active_jobs = JobDescription.objects.filter(company_user=company_user, is_active=True).count()
         
         # ========== CV STATISTICS ==========
         # For SQL Server compatibility: clear any default ordering and sort in Python
@@ -1490,10 +1883,9 @@ def recruitment_analytics(request):
         else:
             interviews_by_job = []
         
-        # Interview type distribution
-        # For SQL Server compatibility: clear any default ordering and sort in Python
+        # Interview type distribution (respect job filter)
         interview_by_type = list(Interview.objects.filter(
-            company_user=company_user
+            interview_base_filter
         ).order_by().values('interview_type').annotate(
             count=Count('id')
         ))
@@ -1506,10 +1898,11 @@ def recruitment_analytics(request):
             interview_type_data[item['interview_type']] = item['count']
         
         # ========== JOB STATISTICS ==========
-        # For SQL Server compatibility: clear any default ordering and sort in Python
-        jobs_by_status = list(JobDescription.objects.filter(
-            company_user=company_user
-        ).order_by().values('is_active').annotate(
+        # When filtering by job: show only that job's status. Otherwise all jobs.
+        jobs_q = JobDescription.objects.filter(company_user=company_user)
+        if job_filter:
+            jobs_q = jobs_q.filter(pk=job_filter.id)
+        jobs_by_status = list(jobs_q.order_by().values('is_active').annotate(
             count=Count('id')
         ))
         
@@ -1523,23 +1916,25 @@ def recruitment_analytics(request):
             else:
                 job_status_data['inactive'] = item['count']
         
-        # Jobs created over time (monthly for last 6 months)
-        # For SQL Server compatibility: clear any default ordering and sort in Python
-        jobs_over_time = list(JobDescription.objects.filter(
+        # Jobs created over time (monthly for last 6 months). When job filter: that job only.
+        jobs_over_time_q = JobDescription.objects.filter(
             company_user=company_user,
             created_at__gte=months_ago
-        ).order_by().annotate(
+        )
+        if job_filter:
+            jobs_over_time_q = jobs_over_time_q.filter(pk=job_filter.id)
+        jobs_over_time = list(jobs_over_time_q.order_by().annotate(
             month=TruncMonth('created_at')
         ).values('month').annotate(
             count=Count('id')
         ))
         jobs_over_time.sort(key=lambda x: x['month'] if x['month'] else datetime.min)
         
-        # Top jobs by CV count
-        # For SQL Server compatibility: clear any default ordering and sort in Python
-        top_jobs_by_cvs = list(JobDescription.objects.filter(
-            company_user=company_user
-        ).order_by().annotate(
+        # Top jobs by CV count. When job filter: that job only.
+        top_jobs_q = JobDescription.objects.filter(company_user=company_user)
+        if job_filter:
+            top_jobs_q = top_jobs_q.filter(pk=job_filter.id)
+        top_jobs_by_cvs = list(top_jobs_q.order_by().annotate(
             cv_count=Count('cv_records')
         ))
         top_jobs_by_cvs.sort(key=lambda x: x.cv_count if x.cv_count else 0, reverse=True)
