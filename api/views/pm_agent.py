@@ -756,7 +756,19 @@ def task_prioritization(request):
         tasks = [
             {
                 "id": t.id,
-                "title": t.title
+                "title": t.title,
+                "description": t.description,
+                "status": t.status,
+                "priority": t.priority,
+                "due_date": t.due_date.isoformat() if t.due_date else None,
+                "estimated_hours": float(t.estimated_hours) if t.estimated_hours else None,
+                "actual_hours": float(t.actual_hours) if t.actual_hours else None,
+                "assignee_id": t.assignee.id if t.assignee else None,
+                "assignee_name": t.assignee.get_full_name() or t.assignee.username if t.assignee else None,
+                "dependencies": [dep.id for dep in t.depends_on.all()],
+                "dependent_count": t.dependent_tasks.count(),
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "progress_percentage": t.progress_percentage,
             }
             for t in tasks_queryset
         ]
@@ -775,34 +787,110 @@ def task_prioritization(request):
             }
             for m in members
         ]
+        
+        # Calculate workload analysis for each team member
+        workload_analysis = {}
+        for member in team:
+            member_tasks = [t for t in tasks if t.get('assignee_id') == member['id']]
+            active_tasks = [t for t in member_tasks if t.get('status') in ['todo', 'in_progress', 'review']]
+            total_hours = sum(t.get('estimated_hours', 0) or 0 for t in active_tasks)
+            workload_analysis[member['id']] = {
+                'total_tasks': len(member_tasks),
+                'active_tasks': len(active_tasks),
+                'total_estimated_hours': total_hours,
+                'overloaded': len(active_tasks) > 8 or total_hours > 40  # Threshold for overload
+            }
 
-        context = {
-            "tasks": tasks,
-            "team": team,
-        }
-
+        # Build context for prioritize_tasks with enhanced data
+        context = {}
         if project_id:
             context["project"] = {
                 "id": project.id,
                 "name": project.name,
                 "status": project.status,
+                "start_date": project.start_date.isoformat() if project.start_date else None,
+                "end_date": project.end_date.isoformat() if project.end_date else None,
             }
+        context["workload_analysis"] = {
+            "workload_by_user": workload_analysis,
+            "team_size": len(team),
+            "total_active_tasks": len([t for t in tasks if t.get('status') in ['todo', 'in_progress', 'review']])
+        }
 
-        result = agent.process(context=context)
+        # Get action from request (default to 'prioritize')
+        action = request.data.get("action", "prioritize")
+        
+        # Call process() method with the action parameter
+        # Note: tasks and team_members are passed explicitly, not through context
+        # Also pass context separately for prioritize_tasks to use
+        result = agent.process(action=action, tasks=tasks, team_members=team, context=context)
+        
+        # Ensure result is a dict
+        if not isinstance(result, dict):
+            result = {"success": True, "tasks": result if isinstance(result, list) else []}
+        
+        # For 'prioritize' action, prioritize_tasks now returns a dict with tasks, summary, statistics, etc.
+        if action == "prioritize":
+            # prioritize_tasks returns dict with tasks, summary, statistics, charts, etc.
+            if "tasks" in result:
+                # Already in correct format - prioritize_tasks returns dict directly
+                pass
+            elif isinstance(result.get("tasks"), dict) and "tasks" in result.get("tasks", {}):
+                # Nested structure, flatten it
+                tasks_result = result["tasks"]
+                result["tasks"] = tasks_result.get("tasks", [])
+                if "summary" in tasks_result:
+                    result["summary"] = tasks_result["summary"]
+                if "statistics" in tasks_result:
+                    result["statistics"] = tasks_result["statistics"]
+                if "charts" in tasks_result:
+                    result["charts"] = tasks_result["charts"]
+                if "critical_path_analysis" in tasks_result:
+                    result["critical_path_analysis"] = tasks_result["critical_path_analysis"]
+                if "workload_analysis" in tasks_result:
+                    result["workload_analysis"] = tasks_result["workload_analysis"]
+        
+        # For 'prioritize_and_order' action, handle combined response
+        if action == "prioritize_and_order":
+            # prioritize_and_order_tasks returns dict with tasks, prioritization, ordering, combined_analysis, etc.
+            if "tasks" in result:
+                # Already in correct format
+                pass
+        
+        # For 'bottlenecks' action, identify_bottlenecks returns dict with bottlenecks, workload_heatmap, etc.
+        if action == "bottlenecks":
+            # identify_bottlenecks returns dict directly with bottlenecks, summary, etc.
+            # The process method returns {"success": True, **analysis} so bottlenecks should be at top level
+            if "bottlenecks" not in result:
+                # Check if it's nested in analysis
+                if "analysis" in result:
+                    result["bottlenecks"] = result.get("analysis", {}).get("bottlenecks", [])
+                    if "summary" in result.get("analysis", {}):
+                        result["summary"] = result["analysis"]["summary"]
+                else:
+                    # Fallback - create empty structure
+                    result["bottlenecks"] = []
+                    result["summary"] = {"message": "No bottlenecks found"}
 
         # Apply prioritization suggestions
-        if result.get("prioritized_tasks"):
-            for task_data in result["prioritized_tasks"]:
-                task_id = task_data.get("task_id")
+        tasks_to_update = result.get("tasks") or result.get("prioritized_tasks", [])
+        if tasks_to_update:
+            for task_data in tasks_to_update:
+                # Handle both 'id' and 'task_id' field names
+                task_id = task_data.get("task_id") or task_data.get("id")
                 if task_id:
                     try:
                         t = Task.objects.get(id=task_id, project__created_by_company_user=company_user)
-                        if "priority" in task_data:
+                        # Update priority if AI recommended a new one
+                        if "ai_priority" in task_data:
+                            t.priority = task_data["ai_priority"]
+                        elif "priority" in task_data:
                             t.priority = task_data["priority"]
+                        # Update status if provided
                         if "status" in task_data:
                             t.status = task_data["status"]
                         t.save()
-                    except Task.DoesNotExist:
+                    except (Task.DoesNotExist, ValueError, TypeError):
                         continue
 
         return Response({"status": "success", "data": result}, status=status.HTTP_200_OK)
@@ -858,20 +946,54 @@ def generate_subtasks(request):
         get_object_or_404(Project, id=project_id, created_by_company_user=company_user)
 
         tasks_queryset = Task.objects.filter(project_id=project_id, project__created_by_company_user=company_user)
+        
+        # Filter out tasks that already have subtasks
+        from core.models import Subtask
+        tasks_with_subtasks = set(
+            Subtask.objects.filter(task__project_id=project_id, task__project__created_by_company_user=company_user)
+            .values_list('task_id', flat=True)
+            .distinct()
+        )
+        
         tasks = [
             {
                 "id": t.id,
-                "title": t.title
+                "title": t.title,
+                "description": t.description or "",
+                "status": t.status,
+                "priority": t.priority,
+                "estimated_hours": float(t.estimated_hours) if t.estimated_hours else None,
             }
             for t in tasks_queryset
+            if t.id not in tasks_with_subtasks  # Only include tasks without existing subtasks
         ]
+        
+        if not tasks:
+            return Response(
+                {"status": "success", "message": "All tasks already have subtasks. No new subtasks generated.", "data": {"saved_count": 0, "skipped_count": len(tasks_with_subtasks)}},
+                status=status.HTTP_200_OK,
+            )
 
-        context = {"tasks": tasks}
-        result = agent.process(context=context)
+        # Use 'generate_for_project' action and pass tasks
+        result = agent.process(action="generate_for_project", tasks=tasks)
+        
+        # Transform result to match expected format
+        if result.get("success") and result.get("subtasks_by_task"):
+            # Convert subtasks_by_task dict to list format expected by frontend
+            subtasks_list = []
+            for task_id, subtask_data in result["subtasks_by_task"].items():
+                subtasks_list.append({
+                    "task_id": task_id,
+                    "subtasks": subtask_data.get("subtasks", []),
+                    "reasoning": subtask_data.get("task_reasoning", "")
+                })
+            result["subtasks"] = subtasks_list
 
         # Save generated subtasks
         saved_count = 0
         reasoning_updated_count = 0
+        skipped_count = len(tasks_with_subtasks)
+        
         for task_data in result.get("subtasks", []):
             task_id = task_data.get("task_id")
             subtasks_list = task_data.get("subtasks", [])
@@ -883,23 +1005,44 @@ def generate_subtasks(request):
             try:
                 task = Task.objects.get(id=task_id, project__created_by_company_user=company_user)
                 
+                # Skip if task already has subtasks (shouldn't happen, but double-check)
+                if task.id in tasks_with_subtasks:
+                    continue
+                
                 # Update AI reasoning if provided
                 if reasoning:
-                    task.ai_reasoning = reasoning
+                    reasoning_prefix = "[Subtask Generation Strategy] "
+                    full_reasoning = reasoning_prefix + reasoning
+                    if task.ai_reasoning:
+                        task.ai_reasoning = task.ai_reasoning + "\n\n" + full_reasoning
+                    else:
+                        task.ai_reasoning = full_reasoning
                     task.save()
                     reasoning_updated_count += 1
 
-                # Delete existing subtasks for this task
-                Subtask.objects.filter(task=task).delete()
-
-                # Create new subtasks
-                for idx, subtask_title in enumerate(subtasks_list):
-                    Subtask.objects.create(
-                        task=task,
-                        title=subtask_title,
-                        order=idx + 1,
-                    )
-                    saved_count += 1
+                # Create new subtasks (don't delete existing - we already filtered them out)
+                # Handle both string format (old) and dict format (new)
+                for idx, subtask_item in enumerate(subtasks_list):
+                    # Extract title and description from dict or use string directly
+                    if isinstance(subtask_item, dict):
+                        subtask_title = subtask_item.get('title', '')
+                        subtask_description = subtask_item.get('description', '')
+                        subtask_order = subtask_item.get('order', idx + 1)
+                    else:
+                        # Old format - string title
+                        subtask_title = str(subtask_item)
+                        subtask_description = ''
+                        subtask_order = idx + 1
+                    
+                    if subtask_title:
+                        Subtask.objects.create(
+                            task=task,
+                            title=subtask_title,
+                            description=subtask_description,
+                            order=subtask_order,
+                            status='todo'
+                        )
+                        saved_count += 1
 
                 continue
             except Task.DoesNotExist:
@@ -910,6 +1053,7 @@ def generate_subtasks(request):
 
         result["saved_count"] = saved_count
         result["reasoning_updated_count"] = reasoning_updated_count
+        result["skipped_count"] = skipped_count
         return Response({"status": "success", "data": result}, status=status.HTTP_200_OK)
 
     except Exception as e:
@@ -961,7 +1105,16 @@ def timeline_gantt(request):
             )
 
         project = get_object_or_404(Project, id=project_id, created_by_company_user=company_user)
-        tasks_queryset = Task.objects.filter(project=project, project__created_by_company_user=company_user)
+        tasks_queryset = Task.objects.filter(project=project, project__created_by_company_user=company_user).prefetch_related('depends_on', 'assignee')
+        
+        # Get team size (unique assignees or team members)
+        from core.models import TeamMember
+        unique_assignees = set()
+        for task in tasks_queryset:
+            if task.assignee:
+                unique_assignees.add(task.assignee.id)
+        team_members_count = TeamMember.objects.filter(project=project, removed_at__isnull=True).count()
+        team_size = max(len(unique_assignees), team_members_count, 1)
 
         tasks = [
                 {
@@ -970,8 +1123,11 @@ def timeline_gantt(request):
                     "status": t.status,
                     "priority": t.priority,
                     "due_date": t.due_date.isoformat() if t.due_date else None,
-                "estimated_hours": t.estimated_hours,
-            }
+                    "estimated_hours": float(t.estimated_hours) if t.estimated_hours else None,
+                    "actual_hours": float(t.actual_hours) if t.actual_hours else None,
+                    "dependencies": [dep.id for dep in t.depends_on.all()],
+                    "assignee_id": t.assignee.id if t.assignee else None,
+                }
             for t in tasks_queryset
         ]
 
@@ -988,7 +1144,24 @@ def timeline_gantt(request):
         }
 
         agent = AgentRegistry.get_agent("timeline_gantt")
-        result = agent.process(action=action, context=context, **request.data)
+        
+        # Extract action-specific options from request.data, excluding action and project_id
+        options = {k: v for k, v in request.data.items() 
+                   if k not in ['action', 'project_id']}
+        
+        # Pass project_id and tasks as kwargs (required by agent.process)
+        # Some actions need tasks from context
+        # Add team_size for calculate_duration action
+        if action == 'calculate_duration':
+            options['team_size'] = team_size
+        
+        result = agent.process(
+            action=action, 
+            project_id=project_id, 
+            tasks=context.get('tasks', []),
+            context=context, 
+            **options
+        )
 
         # Apply timeline updates if provided
         if result.get("updates"):
@@ -1189,10 +1362,25 @@ def knowledge_qa(request):
                 "user_assignments": user_assignments,
             }
 
+        # Enhanced: Get session_id for conversational memory
+        session_id = request.data.get("session_id")
+        if not session_id:
+            # Generate session ID from company user ID
+            session_id = f"company_user_{company_user.id}"
+        
         agent = AgentRegistry.get_agent("knowledge_qa")
-        result = agent.process(question=question, context=context, available_users=available_users)
+        result = agent.process(
+            question=question, 
+            context=context, 
+            available_users=available_users,
+            session_id=session_id
+        )
 
-        return Response({"status": "success", "data": result}, status=status.HTTP_200_OK)
+        return Response({
+            "status": "success", 
+            "data": result,
+            "session_id": session_id  # Return session_id for frontend to use
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.exception("knowledge_qa failed")

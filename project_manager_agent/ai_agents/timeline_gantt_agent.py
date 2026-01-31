@@ -4,6 +4,7 @@ Manages project timelines, creates Gantt charts, and tracks project schedules.
 """
 
 from .base_agent import BaseAgent
+from .enhancements.timeline_gantt_enhancements import TimelineGanttEnhancements
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime, timedelta, timezone as dt_timezone, date as date_type
 from django.utils import timezone
@@ -69,14 +70,15 @@ class TimelineGanttAgent(BaseAgent):
     
     def create_timeline(self, project_id: int, tasks: List[Dict]) -> Dict:
         """
-        Create a project timeline from tasks - maps out tasks and milestones in chronological order.
+        Create a project timeline from tasks - shows task date ranges, status changes, and completion dates.
+        Displays tasks on a calendar timeline graph.
         
         Args:
             project_id (int): Project ID
             tasks (List[Dict]): List of tasks with durations and dependencies
             
         Returns:
-            Dict: Timeline data with tasks organized chronologically
+            Dict: Timeline data with tasks showing date ranges, status changes, and visual timeline
         """
         self.log_action("Creating timeline", {"project_id": project_id, "tasks_count": len(tasks)})
         
@@ -88,146 +90,173 @@ class TimelineGanttAgent(BaseAgent):
                 'error': f'Project with ID {project_id} not found'
             }
         
-        # Sort tasks by due_date, then by priority, then by created_at
-        # Use a far future date for tasks without due dates
-        far_future = datetime(9999, 12, 31, tzinfo=dt_timezone.utc)
-        far_past = datetime(1900, 1, 1, tzinfo=dt_timezone.utc)
+        # Get actual Task objects from database to access all fields including timestamps
+        tasks_queryset = Task.objects.filter(project=project).select_related('assignee').prefetch_related('depends_on', 'dependent_tasks', 'activity_logs')
         
-        def get_date_value(date_str_or_obj):
-            """Convert date string or datetime object to comparable datetime"""
-            if not date_str_or_obj:
-                return far_future
-            if isinstance(date_str_or_obj, str):
-                try:
-                    # Try parsing ISO format string
-                    return datetime.fromisoformat(date_str_or_obj.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    return far_future
-            if isinstance(date_str_or_obj, datetime):
-                return date_str_or_obj
-            return far_future
+        # Get project start date or use earliest task creation date
+        project_start = project.start_date or (tasks_queryset.order_by('created_at').first().created_at.date() if tasks_queryset.exists() else timezone.now().date())
         
-        sorted_tasks = sorted(
-            tasks,
-            key=lambda t: (
-                get_date_value(t.get('due_date')),
-                {'high': 0, 'medium': 1, 'low': 2}.get(t.get('priority', 'medium'), 1),
-                get_date_value(t.get('created_at'))
-            )
-        )
+        timeline_tasks = []
         
-        # Group tasks by status for better visualization
+        for task in tasks_queryset:
+            # Calculate task start and end dates
+            task_start, task_end, _ = self._calculate_task_dates(task, project_start)
+            
+            # Get status change history from activity logs
+            status_changes = []
+            try:
+                from core.models import TaskActivityLog
+                status_logs = TaskActivityLog.objects.filter(
+                    task=task,
+                    action_type='status_changed'
+                ).order_by('created_at')
+                
+                for log in status_logs:
+                    status_changes.append({
+                        'from_status': log.old_value,
+                        'to_status': log.new_value,
+                        'changed_at': log.created_at.isoformat(),
+                        'changed_by': log.user.username if log.user else None
+                    })
+            except Exception:
+                # Fallback: use created_at and updated_at if activity logs not available
+                if task.created_at:
+                    status_changes.append({
+                        'from_status': None,
+                        'to_status': task.status,
+                        'changed_at': task.created_at.isoformat(),
+                        'changed_by': None
+                    })
+            
+            # Determine task date ranges based on status
+            if task.status == 'done' and task.completed_at:
+                # Task is completed - show completion date range
+                completion_date = task.completed_at.date()
+                # Estimate when work started (use created_at or when status changed to in_progress)
+                work_start_date = task.created_at.date()
+                for change in status_changes:
+                    if change.get('to_status') == 'in_progress':
+                        try:
+                            work_start_date = datetime.fromisoformat(change['changed_at'].replace('Z', '+00:00')).date()
+                            break
+                        except:
+                            pass
+                
+                task_date_range = {
+                    'start_date': work_start_date.isoformat(),
+                    'end_date': completion_date.isoformat(),
+                    'type': 'completed',
+                    'completed_from': work_start_date.isoformat(),
+                    'completed_to': completion_date.isoformat()
+                }
+            elif task.status in ['in_progress', 'review']:
+                # Task is in progress - show current date range
+                work_start_date = task.created_at.date()
+                for change in status_changes:
+                    if change.get('to_status') == 'in_progress':
+                        try:
+                            work_start_date = datetime.fromisoformat(change['changed_at'].replace('Z', '+00:00')).date()
+                            break
+                        except:
+                            pass
+                
+                # End date is either due_date or calculated end date
+                end_date = task.due_date.date() if task.due_date else task_end
+                if end_date < work_start_date:
+                    end_date = task_end
+                
+                task_date_range = {
+                    'start_date': work_start_date.isoformat(),
+                    'end_date': end_date.isoformat(),
+                    'type': 'in_progress',
+                    'current_status_since': work_start_date.isoformat()
+                }
+            else:
+                # Task is todo or blocked - show planned date range
+                task_date_range = {
+                    'start_date': task_start.isoformat(),
+                    'end_date': task_end.isoformat(),
+                    'type': 'planned',
+                    'planned_from': task_start.isoformat(),
+                    'planned_to': task_end.isoformat()
+                }
+            
+            # Build task timeline data
+            task_timeline = {
+                'id': task.id,
+                'title': task.title,
+                'description': task.description,
+                'status': task.status,
+                'priority': task.priority,
+                'assignee': task.assignee.username if task.assignee else None,
+                'assignee_id': task.assignee.id if task.assignee else None,
+                'date_range': task_date_range,
+                'status_changes': status_changes,
+                'created_at': task.created_at.isoformat(),
+                'updated_at': task.updated_at.isoformat(),
+                'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+                'due_date': task.due_date.isoformat() if task.due_date else None,
+                'estimated_hours': float(task.estimated_hours) if task.estimated_hours else None,
+                'actual_hours': float(task.actual_hours) if task.actual_hours else None,
+                'dependencies': [dep.id for dep in task.depends_on.all()],
+                'progress': self._calculate_task_progress(task)
+            }
+            
+            timeline_tasks.append(task_timeline)
+        
+        # Sort tasks by start date
+        timeline_tasks.sort(key=lambda t: t['date_range']['start_date'])
+        
+        # Calculate overall timeline bounds
+        if timeline_tasks:
+            earliest_start = min(t['date_range']['start_date'] for t in timeline_tasks)
+            latest_end = max(t['date_range']['end_date'] for t in timeline_tasks)
+        else:
+            earliest_start = project_start.isoformat()
+            latest_end = project_start.isoformat()
+        
         timeline_data = {
             'project_id': project_id,
             'project_name': project.name,
             'project_start_date': project.start_date.isoformat() if project.start_date else None,
             'project_end_date': project.end_date.isoformat() if project.end_date else None,
             'timeline_created_at': timezone.now().isoformat(),
-            'tasks': [],
-            'milestones': [],
-            'phases': []
+            'timeline_start': earliest_start,
+            'timeline_end': latest_end,
+            'tasks': timeline_tasks
         }
         
-        # Process each task and add to timeline
-        for task in sorted_tasks:
-            task_data = {
-                'id': task.get('id'),
-                'title': task.get('title', 'Untitled Task'),
-                'description': task.get('description', ''),
-                'status': task.get('status', 'todo'),
-                'priority': task.get('priority', 'medium'),
-                'due_date': task.get('due_date'),
-                'estimated_hours': task.get('estimated_hours'),
-                'assignee_id': task.get('assignee_id'),
-                'dependencies': task.get('dependencies', [])
+        # Generate Gantt chart data for visualization
+        gantt_data = {
+            'project_id': project_id,
+            'project_name': project.name,
+            'project_start': project.start_date.isoformat() if project.start_date else earliest_start,
+            'project_end': project.end_date.isoformat() if project.end_date else latest_end,
+            'tasks': []
+        }
+        
+        for task_timeline in timeline_tasks:
+            gantt_task = {
+                'id': task_timeline['id'],
+                'title': task_timeline['title'],
+                'start_date': task_timeline['date_range']['start_date'],
+                'end_date': task_timeline['date_range']['end_date'],
+                'status': task_timeline['status'],
+                'priority': task_timeline['priority'],
+                'assignee': task_timeline['assignee'],
+                'progress': task_timeline['progress'],
+                'type': task_timeline['date_range']['type']
             }
-            timeline_data['tasks'].append(task_data)
+            gantt_data['tasks'].append(gantt_task)
         
-        # Use AI to identify meaningful milestones
-        import json
+        timeline_data['gantt_data'] = gantt_data
+        
+        # Generate chart data for visualization
         try:
-            milestone_prompt = f"""Analyze these project tasks and identify key milestones.
-
-Project: {project.name}
-Tasks:
-{json.dumps([{'id': t.get('id'), 'title': t.get('title'), 'description': t.get('description', '')[:100], 
-              'priority': t.get('priority'), 'status': t.get('status'), 
-              'dependencies': len(t.get('dependencies', [])), 'due_date': t.get('due_date')} 
-             for t in sorted_tasks[:20]], indent=2)}
-
-Identify milestones based on:
-1. High-priority tasks that represent major deliverables
-2. Tasks that unblock many other tasks (key dependencies)
-3. Tasks that mark phase transitions
-4. Tasks with significant business value
-
-Return JSON array:
-[
-  {{
-    "task_id": task_id,
-    "title": "milestone title",
-    "type": "deliverable|dependency|phase_transition|business_value",
-    "importance": "high|medium",
-    "reasoning": "why this is a milestone"
-  }}
-]"""
-            
-            milestone_response = self._call_llm(milestone_prompt, self.system_prompt, temperature=0.4, max_tokens=1500)
-            
-            # Extract JSON
-            if "```json" in milestone_response:
-                json_start = milestone_response.find("```json") + 7
-                json_end = milestone_response.find("```", json_start)
-                milestone_response = milestone_response[json_start:json_end].strip()
-            elif "```" in milestone_response:
-                json_start = milestone_response.find("```") + 3
-                json_end = milestone_response.find("```", json_start)
-                if json_end > json_start:
-                    milestone_response = milestone_response[json_start:json_end].strip()
-            
-            ai_milestones = json.loads(milestone_response)
-            milestones = []
-            for ms in ai_milestones:
-                # Find corresponding task
-                task = next((t for t in sorted_tasks if t.get('id') == ms.get('task_id')), None)
-                if task:
-                    milestones.append({
-                        'task_id': task.get('id'),
-                        'title': ms.get('title', task.get('title')),
-                        'due_date': task.get('due_date'),
-                        'type': ms.get('type', 'deliverable'),
-                        'importance': ms.get('importance', 'medium'),
-                        'reasoning': ms.get('reasoning', '')
-                    })
+            chart_data = self._generate_chart_data(gantt_data, tasks_queryset)
+            timeline_data['charts'] = chart_data
         except Exception as e:
-            self.log_action("AI milestone identification failed, using fallback", {"error": str(e)})
-            # Fallback to simple milestone identification
-        milestones = []
-        for task in sorted_tasks:
-            if task.get('priority') == 'high' or len(task.get('dependencies', [])) > 2:
-                milestones.append({
-                    'task_id': task.get('id'),
-                    'title': task.get('title'),
-                    'due_date': task.get('due_date'),
-                        'type': 'high_priority' if task.get('priority') == 'high' else 'key_dependency',
-                        'importance': 'high' if task.get('priority') == 'high' else 'medium',
-                        'reasoning': ''
-                })
-        
-        timeline_data['milestones'] = milestones
-        
-        # Calculate timeline summary
-        total_tasks = len(sorted_tasks)
-        completed_tasks = sum(1 for t in sorted_tasks if t.get('status') == 'done')
-        in_progress_tasks = sum(1 for t in sorted_tasks if t.get('status') == 'in_progress')
-        
-        timeline_data['summary'] = {
-            'total_tasks': total_tasks,
-            'completed_tasks': completed_tasks,
-            'in_progress_tasks': in_progress_tasks,
-            'todo_tasks': total_tasks - completed_tasks - in_progress_tasks,
-            'completion_percentage': round((completed_tasks / total_tasks * 100) if total_tasks > 0 else 0, 2)
-        }
+            self.log_action("Chart generation failed", {"error": str(e)})
         
         return {
             'success': True,
@@ -431,6 +460,30 @@ Return JSON array with optimized dates:
                 'critical_path_duration_days': critical_path_duration,
                 'project_end_date_estimate': critical_path_tasks[-1]['late_finish'] if critical_path_tasks else None
             }
+        
+        # Generate chart data for visualization
+        try:
+            chart_data = self._generate_chart_data(gantt_data, tasks_queryset)
+            gantt_data['charts'] = chart_data
+        except Exception as e:
+            self.log_action("Chart generation failed", {"error": str(e)})
+        
+        # Enhanced: Add risk-based planning
+        try:
+            risk_buffers = TimelineGanttEnhancements.calculate_risk_buffers(gantt_data['tasks'])
+            gantt_data['risk_buffers'] = risk_buffers
+            
+            # Generate probabilistic timeline
+            probabilistic_timeline = TimelineGanttEnhancements.generate_probabilistic_timeline(
+                gantt_data['tasks'], iterations=1000
+            )
+            gantt_data['probabilistic_timeline'] = probabilistic_timeline
+            
+            # Detect schedule conflicts
+            conflicts = TimelineGanttEnhancements.detect_schedule_conflicts(gantt_data['tasks'])
+            gantt_data['schedule_conflicts'] = conflicts
+        except Exception as e:
+            self.log_action("Risk-based planning failed", {"error": str(e)})
         
         return {
             'success': True,
@@ -783,6 +836,18 @@ Return JSON array with optimized dates:
         completed_milestones = sum(1 for m in milestones if m['status'] == 'completed')
         overdue_milestones = sum(1 for m in milestones if m.get('is_overdue', False))
         
+        # Generate milestone chart data
+        milestone_chart_data = {
+            'type': 'pie',
+            'title': 'Milestone Status',
+            'data': [
+                {'name': 'Completed', 'value': completed_milestones, 'color': '#10b981'},
+                {'name': 'In Progress', 'value': sum(1 for m in milestones if m['status'] == 'in_progress'), 'color': '#3b82f6'},
+                {'name': 'Upcoming', 'value': sum(1 for m in milestones if m['status'] == 'upcoming'), 'color': '#6b7280'},
+                {'name': 'Overdue', 'value': overdue_milestones, 'color': '#ef4444'},
+            ]
+        }
+        
         return {
             'success': True,
             'milestones': milestones,
@@ -793,6 +858,9 @@ Return JSON array with optimized dates:
                 'upcoming_milestones': sum(1 for m in milestones if m['status'] == 'upcoming'),
                 'overdue_milestones': overdue_milestones,
                 'completion_rate': round((completed_milestones / total_milestones * 100) if total_milestones > 0 else 0, 2)
+            },
+            'charts': {
+                'milestone_status': milestone_chart_data
             }
         }
     
@@ -1257,17 +1325,20 @@ Return JSON array:
             }
         }
     
-    def calculate_duration_estimate(self, tasks: List[Dict]) -> Dict:
+    def calculate_duration_estimate(self, tasks: List[Dict], project_id: int = None, team_size: int = None) -> Dict:
         """
-        Calculate project duration estimates with AI-powered analysis.
+        Calculate project duration estimates using AI-powered analysis with team size and parallelization considerations.
+        Uses AI for intelligent estimation while maintaining consistency through deterministic base calculations.
         
         Args:
             tasks (List[Dict]): List of tasks with estimated hours and dependencies
+            project_id (int): Optional project ID to fetch team size
+            team_size (int): Optional team size (number of people working on project)
             
         Returns:
-            Dict: Duration estimates including optimistic, realistic, and pessimistic scenarios with AI insights
+            Dict: Duration estimates with AI reasoning and improvement suggestions
         """
-        self.log_action("Calculating duration estimate", {"tasks_count": len(tasks)})
+        self.log_action("Calculating duration estimate", {"tasks_count": len(tasks), "project_id": project_id})
         
         if not tasks:
             return {
@@ -1275,72 +1346,160 @@ Return JSON array:
                 'error': 'No tasks provided for duration estimation'
             }
         
+        # Get team size if not provided
+        if team_size is None and project_id:
+            try:
+                from core.models import Project, TeamMember
+                project = Project.objects.get(id=project_id)
+                # Count unique assignees from tasks
+                unique_assignees = set()
+                for task in tasks:
+                    if task.get('assignee_id'):
+                        unique_assignees.add(task.get('assignee_id'))
+                # Also count team members
+                team_members_count = TeamMember.objects.filter(project=project, removed_at__isnull=True).count()
+                team_size = max(len(unique_assignees), team_members_count, 1)  # At least 1 person
+            except Exception as e:
+                self.log_action("Error getting team size", {"error": str(e)})
+                team_size = 1  # Default to 1 if can't determine
+        
+        if team_size is None or team_size < 1:
+            team_size = 1
+        
+        # Calculate base statistics from task data
+        total_estimated_hours = 0
+        tasks_with_estimates = 0
+        tasks_with_actual = 0
+        total_actual_hours = 0
+        tasks_with_deps = 0
+        dependency_chains = []
+        
+        for task in tasks:
+            estimated = task.get('estimated_hours')
+            actual = task.get('actual_hours')
+            dependencies = task.get('dependencies', [])
+            
+            if estimated and estimated > 0:
+                total_estimated_hours += float(estimated)
+                tasks_with_estimates += 1
+            elif actual and actual > 0:
+                total_estimated_hours += float(actual)
+                total_actual_hours += float(actual)
+                tasks_with_actual += 1
+            else:
+                # Estimate based on priority
+                priority = task.get('priority', 'medium')
+                if priority == 'high':
+                    hours = 12
+                elif priority == 'low':
+                    hours = 4
+                else:
+                    hours = 8
+                total_estimated_hours += hours
+            
+            if dependencies and len(dependencies) > 0:
+                tasks_with_deps += 1
+                dependency_chains.append({
+                    'task_id': task.get('id'),
+                    'title': task.get('title', '')[:50],
+                    'dependencies_count': len(dependencies)
+                })
+        
+        # Calculate parallelization potential
+        # Tasks without dependencies can be done in parallel
+        parallelizable_tasks = len(tasks) - tasks_with_deps
+        max_parallel_tasks = min(team_size, parallelizable_tasks)
+        
         # Prepare task summary for AI
         import json
         task_summary = []
-        for task in tasks[:30]:  # Limit for token efficiency
+        for task in tasks[:50]:  # Limit for token efficiency
             task_summary.append({
                 'id': task.get('id'),
                 'title': task.get('title', '')[:50],
                 'estimated_hours': task.get('estimated_hours'),
+                'actual_hours': task.get('actual_hours'),
                 'priority': task.get('priority', 'medium'),
                 'status': task.get('status', 'todo'),
                 'dependencies_count': len(task.get('dependencies', [])),
                 'has_due_date': bool(task.get('due_date'))
             })
         
-        # Use AI for more accurate estimation
-        prompt = f"""You are a project estimation expert. Analyze these tasks and provide accurate duration estimates.
+        # Use AI for intelligent estimation with team size and parallelization
+        prompt = f"""You are an expert project estimation analyst. Analyze this project and provide accurate, detailed duration estimates.
 
-Tasks Summary:
-{json.dumps(task_summary, indent=2)}
+PROJECT STATISTICS:
+- Total Tasks: {len(tasks)}
+- Tasks with Estimated Hours: {tasks_with_estimates}
+- Tasks with Actual Hours: {tasks_with_actual}
+- Total Estimated Hours: {round(total_estimated_hours, 2)}
+- Tasks with Dependencies: {tasks_with_deps}
+- Team Size: {team_size} people
+- Parallelizable Tasks (no dependencies): {parallelizable_tasks}
+- Maximum Parallel Tasks: {max_parallel_tasks}
 
-Total Tasks: {len(tasks)}
-Tasks with Estimated Hours: {sum(1 for t in tasks if t.get('estimated_hours'))}
-Tasks with Dependencies: {sum(1 for t in tasks if t.get('dependencies'))}
+TASK DETAILS:
+{json.dumps(task_summary[:30], indent=2)}
 
-Provide duration estimates considering:
-1. Task complexity (based on titles and descriptions)
-2. Dependencies (critical path analysis)
-3. Resource availability (assume standard team)
-4. Risk factors (high priority tasks, dependencies, etc.)
-5. Historical patterns (tasks often take 20-30% longer than estimated)
+CRITICAL CONSIDERATIONS:
+1. TEAM SIZE & PARALLELIZATION: With {team_size} people, tasks can be done in parallel. 
+   - If 6 people can do a project in 10 days, 12 people can do it in ~5-6 days (accounting for coordination overhead)
+   - Not all tasks can be parallelized due to dependencies
+   - Coordination overhead: More people = more communication needed (typically 10-20% overhead per additional person beyond optimal team size)
+   - Optimal parallelization: Consider which tasks can truly run in parallel vs sequential
 
-Calculate:
-- Total estimated hours (sum of all task estimates, or estimate if missing)
-- Working days needed (8 hours per day)
-- Calendar days (accounting for weekends, 5-day work weeks)
-- Optimistic scenario (best case, 15% faster)
-- Realistic scenario (most likely, with buffers)
-- Pessimistic scenario (worst case, 30% slower with delays)
-- Expected duration (PERT: (optimistic + 4*realistic + pessimistic) / 6)
+2. DEPENDENCIES: {tasks_with_deps} tasks have dependencies, creating sequential bottlenecks
+   - Critical path analysis: Longest chain of dependent tasks determines minimum duration
+   - Dependency delays can cascade through the project
 
-Return JSON:
+3. TASK COMPLEXITY: Analyze task titles and priorities to estimate realistic durations
+   - High priority tasks often indicate complexity
+   - Tasks with actual hours provide historical data
+
+4. REALISTIC ESTIMATION:
+   - Base calculation: Total hours / (8 hours/day * team_size * parallelization_factor)
+   - Parallelization factor: Account for tasks that can run simultaneously vs sequentially
+   - Buffer for dependencies: Add time for dependency-related delays
+   - Buffer for coordination: More team members = more coordination needed
+
+CALCULATE AND RETURN JSON:
 {{
-  "total_estimated_hours": number,
-  "working_days": {{
-    "optimistic": number,
-    "realistic": number,
-    "pessimistic": number,
-    "expected": number
+  "total_estimated_hours": number (sum of all task hours),
+  "sequential_hours": number (hours that must be done sequentially due to dependencies),
+  "parallelizable_hours": number (hours that can be done in parallel),
+  "effective_working_days": {{
+    "optimistic": number (best case with optimal parallelization, 15% faster),
+    "realistic": number (most likely with realistic parallelization and buffers),
+    "pessimistic": number (worst case with delays, 30% slower),
+    "expected": number (PERT: (optimistic + 4*realistic + pessimistic) / 6)
   }},
   "calendar_days": {{
-    "expected": number,
+    "expected": number (accounting for weekends, 5-day work weeks),
     "weeks": number
   }},
-  "dependency_buffer_days": number,
-  "risk_buffer_days": number,
-  "recommendations": {{
-    "suggested_deadline_days": number,
-    "suggested_deadline_weeks": number,
-    "confidence_level": "high|medium|low",
-    "key_risks": ["risk1", "risk2"],
-    "notes": "brief explanation of estimates and assumptions"
+  "team_efficiency": {{
+    "current_team_size": {team_size},
+    "optimal_team_size": number (suggested optimal team size),
+    "parallelization_ratio": number (0-1, how much work can be parallelized),
+    "coordination_overhead_percent": number (overhead due to team size)
+  }},
+  "ai_reasoning": "DETAILED explanation (5-8 sentences): WHY this project will take this estimated time. Explain the key factors: total work hours, team size impact, dependency bottlenecks, parallelization opportunities, coordination overhead, and any other significant factors. Be specific about numbers and calculations.",
+  "improvement_suggestions": [
+    "Specific suggestion 1 on how to reduce time (e.g., 'Add 3 more developers to parallelize frontend and backend work, reducing timeline by ~40%')",
+    "Specific suggestion 2 (e.g., 'Break down Task X into smaller subtasks to enable earlier parallel work')",
+    "Specific suggestion 3 (e.g., 'Reduce dependencies by reordering tasks Y and Z')",
+    "At least 3-5 concrete, actionable suggestions"
+  ],
+  "dependency_analysis": {{
+    "critical_path_length_days": number (longest dependency chain),
+    "bottleneck_tasks": ["task title 1", "task title 2"],
+    "dependency_impact_percent": number (how much dependencies slow down the project)
   }}
 }}"""
         
         try:
-            response = self._call_llm(prompt, self.system_prompt, temperature=0.3, max_tokens=1500)
+            # Use temperature=0 for consistency (same input = same output)
+            response = self._call_llm(prompt, self.system_prompt, temperature=0, max_tokens=2000)
             
             # Extract JSON
             if "```json" in response:
@@ -1358,53 +1517,30 @@ Return JSON:
             self.log_action("AI estimation failed, using fallback", {"error": str(e)})
             ai_estimates = None
         
-        # Calculate base estimates
-        total_estimated_hours = sum(
-            task.get('estimated_hours', 0) or 0 
-            for task in tasks 
-            if task.get('estimated_hours')
-        )
-        
-        if total_estimated_hours == 0:
-            total_estimated_hours = len(tasks) * 8
-        
-        working_days = total_estimated_hours / 8
-        tasks_with_deps = sum(1 for task in tasks if task.get('dependencies'))
-        dependency_buffer = tasks_with_deps * 0.5
-        
-        # Use AI estimates if available, otherwise use calculated
-        if ai_estimates:
-            estimates = {
-                'total_tasks': len(tasks),
-                'total_estimated_hours': round(ai_estimates.get('total_estimated_hours', total_estimated_hours), 2),
-                'working_days': {
-                    'optimistic': round(ai_estimates['working_days'].get('optimistic', working_days * 0.85), 1),
-                    'realistic': round(ai_estimates['working_days'].get('realistic', working_days + dependency_buffer), 1),
-                    'pessimistic': round(ai_estimates['working_days'].get('pessimistic', working_days * 1.3 + dependency_buffer), 1),
-                    'expected': round(ai_estimates['working_days'].get('expected', (working_days * 0.85 + 4 * (working_days + dependency_buffer) + (working_days * 1.3 + dependency_buffer)) / 6), 1)
-                },
-                'calendar_days': {
-                    'expected': round(ai_estimates['calendar_days'].get('expected', (ai_estimates['working_days'].get('expected', working_days) / 5) * 7), 1),
-                    'weeks': round(ai_estimates['calendar_days'].get('weeks', ai_estimates['working_days'].get('expected', working_days) / 5), 1)
-                },
-                'dependency_buffer_days': round(ai_estimates.get('dependency_buffer_days', dependency_buffer), 1),
-                'risk_buffer_days': round(ai_estimates.get('risk_buffer_days', 0), 1),
-                'tasks_with_dependencies': tasks_with_deps
-            }
-            recommendations = ai_estimates.get('recommendations', {})
-        else:
-            # Fallback calculations
-            optimistic_days = working_days * 0.85
-            realistic_days = working_days + dependency_buffer
-            pessimistic_days = working_days * 1.3 + dependency_buffer
-            expected_days = (optimistic_days + 4 * realistic_days + pessimistic_days) / 6
-            calendar_weeks = expected_days / 5
-            calendar_days = calendar_weeks * 7
+        # Fallback calculations if AI fails
+        if not ai_estimates:
+            # Base calculation
+            base_working_days = total_estimated_hours / (8.0 * team_size)
             
-            estimates = {
-                'total_tasks': len(tasks),
+            # Account for parallelization (not all tasks can be parallelized)
+            parallelization_factor = 0.6 if team_size > 1 else 1.0  # 60% parallelization with team
+            effective_days = base_working_days / parallelization_factor
+            
+            # Dependency impact
+            dependency_multiplier = 1.0 + (tasks_with_deps * 0.1 / max(1, len(tasks)))
+            adjusted_days = effective_days * dependency_multiplier
+            
+            optimistic_days = adjusted_days * 0.85
+            realistic_days = adjusted_days * 1.20
+            pessimistic_days = adjusted_days * 1.35
+            expected_days = (optimistic_days + (4 * realistic_days) + pessimistic_days) / 6.0
+            
+            calendar_weeks = expected_days / 5.0
+            calendar_days = calendar_weeks * 7.0
+            
+            ai_estimates = {
                 'total_estimated_hours': round(total_estimated_hours, 2),
-                'working_days': {
+                'effective_working_days': {
                     'optimistic': round(optimistic_days, 1),
                     'realistic': round(realistic_days, 1),
                     'pessimistic': round(pessimistic_days, 1),
@@ -1414,35 +1550,93 @@ Return JSON:
                     'expected': round(calendar_days, 1),
                     'weeks': round(calendar_weeks, 1)
                 },
-                'dependency_buffer_days': round(dependency_buffer, 1),
-                'risk_buffer_days': 0,
-                'tasks_with_dependencies': tasks_with_deps
-            }
-            recommendations = {
-                'suggested_deadline_days': round(expected_days + 3, 1),
-                'suggested_deadline_weeks': round((expected_days + 3) / 5, 1),
-                'confidence_level': 'medium',
-                'key_risks': ['Uncertain task estimates', 'Dependency delays'],
-                'notes': 'Estimates assume 8-hour working days and 5-day work weeks. Add buffer for unexpected delays.'
+                'team_efficiency': {
+                    'current_team_size': team_size,
+                    'optimal_team_size': team_size,
+                    'parallelization_ratio': parallelization_factor,
+                    'coordination_overhead_percent': max(0, (team_size - 1) * 5)
+                },
+                'ai_reasoning': f'Fallback calculation: {total_estimated_hours} total hours divided by {team_size} team members with {parallelization_factor*100}% parallelization efficiency. Includes dependency buffers.',
+                'improvement_suggestions': [
+                    'Add more team members to increase parallelization',
+                    'Reduce task dependencies to enable more parallel work',
+                    'Break down large tasks into smaller, parallelizable subtasks'
+                ],
+                'dependency_analysis': {
+                    'critical_path_length_days': round(realistic_days, 1),
+                    'bottleneck_tasks': [],
+                    'dependency_impact_percent': round((dependency_multiplier - 1) * 100, 1)
+                }
             }
         
         # Get actual span if tasks have due dates
         tasks_with_dates = [t for t in tasks if t.get('due_date')]
+        actual_span_days = None
         if tasks_with_dates:
             try:
-                dates = [datetime.fromisoformat(t['due_date'].replace('Z', '+00:00')) for t in tasks_with_dates if t.get('due_date')]
+                dates = []
+                for t in tasks_with_dates:
+                    due_date = t.get('due_date')
+                    if due_date:
+                        if isinstance(due_date, str):
+                            dates.append(datetime.fromisoformat(due_date.replace('Z', '+00:00')))
+                        else:
+                            dates.append(due_date)
                 if dates:
                     earliest_date = min(dates)
                     latest_date = max(dates)
-                    actual_span_days = (latest_date - earliest_date).days
-                else:
-                    actual_span_days = None
-            except:
+                    actual_span_days = (latest_date - earliest_date).days + 1
+            except Exception as e:
+                self.log_action("Error calculating actual span", {"error": str(e)})
                 actual_span_days = None
-        else:
-            actual_span_days = None
         
-        estimates['actual_span_days'] = actual_span_days
+        # Build estimates dictionary
+        estimates = {
+            'total_tasks': len(tasks),
+            'tasks_with_estimated_hours': tasks_with_estimates,
+            'tasks_with_actual_hours': tasks_with_actual,
+            'total_estimated_hours': round(ai_estimates.get('total_estimated_hours', total_estimated_hours), 2),
+            'working_days': ai_estimates.get('effective_working_days', {
+                'optimistic': 0,
+                'realistic': 0,
+                'pessimistic': 0,
+                'expected': 0
+            }),
+            'calendar_days': ai_estimates.get('calendar_days', {
+                'expected': 0,
+                'weeks': 0
+            }),
+            'team_efficiency': ai_estimates.get('team_efficiency', {
+                'current_team_size': team_size,
+                'optimal_team_size': team_size,
+                'parallelization_ratio': 0.6,
+                'coordination_overhead_percent': 0
+            }),
+            'tasks_with_dependencies': tasks_with_deps,
+            'actual_span_days': actual_span_days,
+            'dependency_analysis': ai_estimates.get('dependency_analysis', {})
+        }
+        
+        # Build recommendations with AI insights
+        recommendations = {
+            'suggested_deadline_days': round(estimates['working_days']['expected'] + 2, 1),
+            'suggested_deadline_weeks': round((estimates['working_days']['expected'] + 2) / 5.0, 1),
+            'confidence_level': 'high' if tasks_with_estimates > len(tasks) * 0.7 else ('medium' if tasks_with_estimates > len(tasks) * 0.3 else 'low'),
+            'ai_reasoning': ai_estimates.get('ai_reasoning', 'AI analysis unavailable'),
+            'improvement_suggestions': ai_estimates.get('improvement_suggestions', [
+                'Add more team members to increase parallelization',
+                'Reduce task dependencies',
+                'Break down large tasks'
+            ]),
+            'key_risks': []
+        }
+        
+        if tasks_with_estimates < len(tasks) * 0.5:
+            recommendations['key_risks'].append('Many tasks lack time estimates')
+        if tasks_with_deps > len(tasks) * 0.4:
+            recommendations['key_risks'].append('High dependency count may cause delays')
+        if team_size < 3 and len(tasks) > 10:
+            recommendations['key_risks'].append('Small team size may slow down project with many tasks')
         
         return {
             'success': True,
@@ -1502,9 +1696,13 @@ Return JSON:
         """
         Check and alert on upcoming deadlines and milestones.
         
+        Shows:
+        1. Tasks that are not completed and have less than 20% of total time remaining
+        2. Tasks that have passed their deadline and are not completed
+        
         Args:
             project_id (int): Project ID
-            days_ahead (int): Number of days to look ahead
+            days_ahead (int): Number of days to look ahead (not used in new logic, kept for compatibility)
             
         Returns:
             Dict: Upcoming deadlines and alerts
@@ -1520,56 +1718,97 @@ Return JSON:
             }
         
         now = timezone.now()
-        future_date = now + timedelta(days=days_ahead)
-        
-        # Get tasks with deadlines in the next N days
-        upcoming_tasks = Task.objects.filter(
-            project=project,
-            due_date__gte=now,
-            due_date__lte=future_date,
-            status__in=['todo', 'in_progress', 'review']
-        ).select_related('assignee').order_by('due_date')
-        
-        # Get overdue tasks
-        overdue_tasks = Task.objects.filter(
-            project=project,
-            due_date__lt=now,
-            status__in=['todo', 'in_progress', 'review']
-        ).select_related('assignee').order_by('due_date')
-        
         alerts = []
         
-        # Process upcoming tasks
-        for task in upcoming_tasks:
-            days_until = (task.due_date - now).days
-            urgency = 'high' if days_until <= 2 else ('medium' if days_until <= 5 else 'low')
-            
-            alerts.append({
-                'type': 'upcoming',
-                'task_id': task.id,
-                'title': task.title,
-                'due_date': task.due_date.isoformat(),
-                'days_until': days_until,
-                'urgency': urgency,
-                'status': task.status,
-                'priority': task.priority,
-                'assignee': task.assignee.username if task.assignee else None
-            })
+        # Get all tasks that are not completed and have a due_date
+        incomplete_tasks = Task.objects.filter(
+            project=project,
+            due_date__isnull=False,
+            status__in=['todo', 'in_progress', 'review', 'blocked']
+        ).select_related('assignee').order_by('due_date')
         
-        # Process overdue tasks
-        for task in overdue_tasks:
-            days_overdue = (now - task.due_date).days
-            alerts.append({
-                'type': 'overdue',
-                'task_id': task.id,
-                'title': task.title,
-                'due_date': task.due_date.isoformat(),
-                'days_overdue': days_overdue,
-                'urgency': 'critical',
-                'status': task.status,
-                'priority': task.priority,
-                'assignee': task.assignee.username if task.assignee else None
-            })
+        for task in incomplete_tasks:
+            if not task.due_date:
+                continue
+                
+            # Convert due_date to datetime for comparison if it's a date
+            if isinstance(task.due_date, date_type):
+                task_due_datetime = datetime.combine(task.due_date, datetime.min.time())
+                task_due_datetime = timezone.make_aware(task_due_datetime)
+            else:
+                task_due_datetime = task.due_date
+            
+            # Check if task is overdue (deadline has passed)
+            is_overdue = task_due_datetime < now
+            
+            if is_overdue:
+                # Task is overdue - show it
+                days_overdue = (now - task_due_datetime).days
+                alerts.append({
+                    'type': 'overdue',
+                    'task_id': task.id,
+                    'task_title': task.title,
+                    'title': task.title,
+                    'due_date': task_due_datetime.isoformat(),
+                    'days_overdue': days_overdue,
+                    'urgency': 'critical',
+                    'status': task.status,
+                    'priority': task.priority,
+                    'assignee': task.assignee.username if task.assignee else None,
+                    'assignee_name': task.assignee.username if task.assignee else 'Unassigned'
+                })
+            else:
+                # Task is not overdue - check if less than 20% time remaining
+                # Calculate total time: from task start (created_at or project start) to due_date
+                task_start = None
+                if task.created_at:
+                    task_start = task.created_at
+                elif project.start_date:
+                    task_start = datetime.combine(project.start_date, datetime.min.time())
+                    if timezone.is_naive(task_start):
+                        task_start = timezone.make_aware(task_start)
+                else:
+                    # Fallback: use task creation date or project creation date
+                    task_start = now - timedelta(days=30)  # Default to 30 days ago if no start date
+                    if timezone.is_naive(task_start):
+                        task_start = timezone.make_aware(task_start)
+                
+                if isinstance(task_start, date_type):
+                    task_start = datetime.combine(task_start, datetime.min.time())
+                    if timezone.is_naive(task_start):
+                        task_start = timezone.make_aware(task_start)
+                
+                # Calculate total time duration
+                total_time_delta = task_due_datetime - task_start
+                total_time_days = total_time_delta.total_seconds() / (24 * 3600)
+                
+                # Calculate remaining time
+                remaining_time_delta = task_due_datetime - now
+                remaining_time_days = remaining_time_delta.total_seconds() / (24 * 3600)
+                
+                # Check if less than 20% of total time is remaining
+                if total_time_days > 0:
+                    remaining_percentage = (remaining_time_days / total_time_days) * 100
+                    
+                    if remaining_percentage < 20:
+                        # Less than 20% time remaining - show this task
+                        days_until = remaining_time_days
+                        urgency = 'critical' if remaining_percentage < 5 else ('high' if remaining_percentage < 10 else 'medium')
+                        
+                        alerts.append({
+                            'type': 'upcoming',
+                            'task_id': task.id,
+                            'task_title': task.title,
+                            'title': task.title,
+                            'due_date': task_due_datetime.isoformat(),
+                            'days_until': int(days_until) if days_until > 0 else 0,
+                            'urgency': urgency,
+                            'status': task.status,
+                            'priority': task.priority,
+                            'assignee': task.assignee.username if task.assignee else None,
+                            'assignee_name': task.assignee.username if task.assignee else 'Unassigned',
+                            'remaining_percentage': round(remaining_percentage, 1)
+                        })
         
         # Check project deadline
         if project.end_date:
@@ -1814,6 +2053,148 @@ Return JSON:
             result['ai_insights'] = ai_analysis
         
         return result
+    
+    def _generate_chart_data(self, gantt_data: Dict, tasks_queryset) -> Dict:
+        """
+        Generate chart data structures for visualization.
+        
+        Args:
+            gantt_data (Dict): Gantt chart data with tasks
+            tasks_queryset: QuerySet of tasks
+            
+        Returns:
+            Dict: Chart data for various visualizations
+        """
+        charts = {}
+        
+        # 1. Task Status Distribution (Pie Chart)
+        status_counts = {}
+        for task in gantt_data.get('tasks', []):
+            status = task.get('status', 'todo')
+            status_counts[status] = status_counts.get(status, 0) + 1
+        
+        charts['status_distribution'] = {
+            'type': 'pie',
+            'title': 'Task Status Distribution',
+            'data': [
+                {'name': 'Done', 'value': status_counts.get('done', 0), 'color': '#10b981'},
+                {'name': 'In Progress', 'value': status_counts.get('in_progress', 0), 'color': '#3b82f6'},
+                {'name': 'Review', 'value': status_counts.get('review', 0), 'color': '#f59e0b'},
+                {'name': 'Blocked', 'value': status_counts.get('blocked', 0), 'color': '#ef4444'},
+                {'name': 'To Do', 'value': status_counts.get('todo', 0), 'color': '#6b7280'},
+            ]
+        }
+        
+        # 2. Priority Distribution (Bar Chart)
+        priority_counts = {}
+        for task in gantt_data.get('tasks', []):
+            priority = task.get('priority', 'medium')
+            priority_counts[priority] = priority_counts.get(priority, 0) + 1
+        
+        charts['priority_distribution'] = {
+            'type': 'bar',
+            'title': 'Task Priority Distribution',
+            'xAxis': 'Priority',
+            'yAxis': 'Number of Tasks',
+            'data': [
+                {'name': 'High', 'value': priority_counts.get('high', 0), 'color': '#ef4444'},
+                {'name': 'Medium', 'value': priority_counts.get('medium', 0), 'color': '#f59e0b'},
+                {'name': 'Low', 'value': priority_counts.get('low', 0), 'color': '#10b981'},
+            ]
+        }
+        
+        # 3. Progress Over Time (Line Chart) - Burndown
+        if gantt_data.get('tasks'):
+            # Group tasks by week
+            from collections import defaultdict
+            weekly_progress = defaultdict(lambda: {'completed': 0, 'total': 0})
+            
+            for task in gantt_data['tasks']:
+                start_date = datetime.strptime(task['start_date'], '%Y-%m-%d').date()
+                # Get week number
+                week_key = f"{start_date.isocalendar()[0]}-W{start_date.isocalendar()[1]:02d}"
+                weekly_progress[week_key]['total'] += 1
+                if task.get('status') == 'done':
+                    weekly_progress[week_key]['completed'] += 1
+            
+            charts['burndown'] = {
+                'type': 'line',
+                'title': 'Project Burndown Chart',
+                'xAxis': 'Week',
+                'yAxis': 'Tasks',
+                'data': [
+                    {
+                        'week': week,
+                        'completed': data['completed'],
+                        'total': data['total'],
+                        'remaining': data['total'] - data['completed']
+                    }
+                    for week, data in sorted(weekly_progress.items())
+                ]
+            }
+        
+        # 4. Resource Utilization (Bar Chart)
+        assignee_counts = {}
+        assignee_hours = {}
+        for task in gantt_data.get('tasks', []):
+            assignee = task.get('assignee', 'Unassigned')
+            assignee_counts[assignee] = assignee_counts.get(assignee, 0) + 1
+            hours = task.get('estimated_hours', 0) or 0
+            assignee_hours[assignee] = assignee_hours.get(assignee, 0) + hours
+        
+        charts['resource_utilization'] = {
+            'type': 'bar',
+            'title': 'Resource Utilization',
+            'xAxis': 'Team Member',
+            'yAxis': 'Hours',
+            'data': [
+                {
+                    'name': assignee,
+                    'tasks': assignee_counts.get(assignee, 0),
+                    'hours': round(assignee_hours.get(assignee, 0), 1)
+                }
+                for assignee in sorted(set(list(assignee_counts.keys()) + list(assignee_hours.keys())))
+            ]
+        }
+        
+        # 5. Timeline Visualization Data (for Gantt Chart)
+        charts['gantt_timeline'] = {
+            'type': 'gantt',
+            'title': 'Project Timeline',
+            'startDate': gantt_data.get('timeline', {}).get('start'),
+            'endDate': gantt_data.get('timeline', {}).get('end'),
+            'tasks': [
+                {
+                    'id': task['id'],
+                    'name': task['title'],
+                    'start': task['start_date'],
+                    'end': task['end_date'],
+                    'progress': task.get('progress', 0),
+                    'status': task.get('status', 'todo'),
+                    'priority': task.get('priority', 'medium'),
+                    'assignee': task.get('assignee', 'Unassigned'),
+                    'isCritical': task.get('id') in [cp['task_id'] for cp in gantt_data.get('critical_path', [])]
+                }
+                for task in gantt_data.get('tasks', [])
+            ]
+        }
+        
+        # 6. Completion Rate (Progress Chart)
+        total_tasks = len(gantt_data.get('tasks', []))
+        completed_tasks = status_counts.get('done', 0)
+        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+        
+        charts['completion_rate'] = {
+            'type': 'progress',
+            'title': 'Project Completion',
+            'percentage': round(completion_rate, 1),
+            'completed': completed_tasks,
+            'total': total_tasks,
+            'inProgress': status_counts.get('in_progress', 0),
+            'todo': status_counts.get('todo', 0)
+        }
+        
+        return charts
     
     def get_shared_view(self, project_id: int) -> Dict:
         """
@@ -2069,6 +2450,225 @@ Return JSON:
             'shared_view': shared_view
         }
     
+    def optimize_schedule(self, project_id: int, resources: List[Dict] = None) -> Dict:
+        """
+        Optimize schedule with resource constraints.
+        
+        Args:
+            project_id (int): Project ID
+            resources (List[Dict]): Available resources/users
+            
+        Returns:
+            Dict: Optimized schedule with improvements
+        """
+        self.log_action("Optimizing schedule", {"project_id": project_id})
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'Project with ID {project_id} not found'
+            }
+        
+        tasks = Task.objects.filter(project=project).select_related('assignee')
+        
+        tasks_data = [{
+            'id': t.id,
+            'title': t.title,
+            'estimated_hours': float(t.estimated_hours) if t.estimated_hours else None,
+            'assignee_id': t.assignee.id if t.assignee else None,
+            'priority': t.priority,
+            'status': t.status,
+            'dependencies': [dep.id for dep in t.depends_on.all()],
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+        } for t in tasks]
+        
+        optimization_result = TimelineGanttEnhancements.optimize_schedule(tasks_data, resources)
+        
+        return {
+            'success': True,
+            'optimization': optimization_result,
+            'project_id': project_id,
+            'project_name': project.name,
+        }
+    
+    def coordinate_multi_project_schedules(self, project_ids: List[int]) -> Dict:
+        """
+        Coordinate schedules across multiple projects (Phase 2 feature).
+        
+        Args:
+            project_ids (List[int]): List of project IDs to coordinate
+            
+        Returns:
+            Dict: Coordinated schedule with resource allocation and conflicts
+        """
+        self.log_action("Coordinating multi-project schedules", {"project_ids": project_ids})
+        
+        projects_data = []
+        for project_id in project_ids:
+            try:
+                project = Project.objects.get(id=project_id)
+                tasks = Task.objects.filter(project=project).select_related('assignee')
+                
+                tasks_data = [{
+                    'id': t.id,
+                    'title': t.title,
+                    'estimated_hours': float(t.estimated_hours) if t.estimated_hours else None,
+                    'assignee_id': t.assignee.id if t.assignee else None,
+                    'priority': t.priority,
+                    'status': t.status,
+                    'dependencies': [dep.id for dep in t.depends_on.all()],
+                    'due_date': t.due_date.isoformat() if t.due_date else None,
+                } for t in tasks]
+                
+                projects_data.append({
+                    'id': project.id,
+                    'name': project.name,
+                    'tasks': tasks_data
+                })
+            except Project.DoesNotExist:
+                continue
+        
+        coordination_result = TimelineGanttEnhancements.coordinate_multi_project_schedules(projects_data)
+        
+        return {
+            'success': True,
+            'coordination': coordination_result,
+            'projects_analyzed': len(projects_data)
+        }
+    
+    def generate_what_if_scenarios(self, project_id: int, scenarios: List[str] = None) -> Dict:
+        """
+        Generate what-if scenario timelines (Phase 2 feature).
+        
+        Args:
+            project_id (int): Project ID
+            scenarios (List[str]): Optional list of scenario names
+            
+        Returns:
+            Dict: Multiple scenario timelines
+        """
+        self.log_action("Generating what-if scenarios", {"project_id": project_id})
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'Project with ID {project_id} not found'
+            }
+        
+        tasks = Task.objects.filter(project=project).select_related('assignee')
+        
+        tasks_data = [{
+            'id': t.id,
+            'title': t.title,
+            'estimated_hours': float(t.estimated_hours) if t.estimated_hours else None,
+            'priority': t.priority,
+            'status': t.status,
+            'dependencies': [dep.id for dep in t.depends_on.all()],
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+        } for t in tasks]
+        
+        scenarios_result = TimelineGanttEnhancements.generate_what_if_scenarios(tasks_data, scenarios)
+        
+        return {
+            'success': True,
+            'scenarios': scenarios_result,
+            'project_id': project_id,
+            'project_name': project.name,
+        }
+    
+    def optimize_schedule_genetic(self, project_id: int, generations: int = 50, population_size: int = 20) -> Dict:
+        """
+        Optimize schedule using genetic algorithm (Phase 2 feature).
+        
+        Args:
+            project_id (int): Project ID
+            generations (int): Number of generations
+            population_size (int): Population size
+            
+        Returns:
+            Dict: Optimized schedule
+        """
+        self.log_action("Optimizing schedule with genetic algorithm", {"project_id": project_id})
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'Project with ID {project_id} not found'
+            }
+        
+        tasks = Task.objects.filter(project=project).select_related('assignee')
+        
+        tasks_data = [{
+            'id': t.id,
+            'title': t.title,
+            'estimated_hours': float(t.estimated_hours) if t.estimated_hours else None,
+            'priority': t.priority,
+            'status': t.status,
+            'dependencies': [dep.id for dep in t.depends_on.all()],
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+        } for t in tasks]
+        
+        optimization_result = TimelineGanttEnhancements.optimize_schedule_genetic_algorithm(
+            tasks_data, generations=generations, population_size=population_size
+        )
+        
+        return {
+            'success': True,
+            'optimization': optimization_result,
+            'project_id': project_id,
+            'project_name': project.name,
+        }
+    
+    def optimize_schedule_simulated_annealing(self, project_id: int, iterations: int = 1000) -> Dict:
+        """
+        Optimize schedule using simulated annealing (Phase 2 feature).
+        
+        Args:
+            project_id (int): Project ID
+            iterations (int): Number of iterations
+            
+        Returns:
+            Dict: Optimized schedule
+        """
+        self.log_action("Optimizing schedule with simulated annealing", {"project_id": project_id})
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'Project with ID {project_id} not found'
+            }
+        
+        tasks = Task.objects.filter(project=project).select_related('assignee')
+        
+        tasks_data = [{
+            'id': t.id,
+            'title': t.title,
+            'estimated_hours': float(t.estimated_hours) if t.estimated_hours else None,
+            'priority': t.priority,
+            'status': t.status,
+            'dependencies': [dep.id for dep in t.depends_on.all()],
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+        } for t in tasks]
+        
+        optimization_result = TimelineGanttEnhancements.optimize_schedule_simulated_annealing(
+            tasks_data, iterations=iterations
+        )
+        
+        return {
+            'success': True,
+            'optimization': optimization_result,
+            'project_id': project_id,
+            'project_name': project.name,
+        }
+    
     def process(self, action: str, **kwargs) -> Dict:
         """
         Main processing method for timeline agent - routes actions to appropriate methods.
@@ -2129,11 +2729,34 @@ Return JSON:
             
             elif action == 'calculate_duration':
                 tasks = kwargs.get('tasks', [])
-                return self.calculate_duration_estimate(tasks)
+                project_id = kwargs.get('project_id')
+                team_size = kwargs.get('team_size')
+                return self.calculate_duration_estimate(tasks, project_id=project_id, team_size=team_size)
             
             elif action == 'manage_phases':
                 phases = kwargs.get('phases')
                 return self.manage_phases(project_id, phases)
+            
+            elif action == 'optimize_schedule':
+                resources = kwargs.get('resources', [])
+                return self.optimize_schedule(project_id, resources)
+            
+            elif action == 'coordinate_multi_project':
+                project_ids = kwargs.get('project_ids', [project_id])
+                return self.coordinate_multi_project_schedules(project_ids)
+            
+            elif action == 'what_if_scenarios':
+                scenarios = kwargs.get('scenarios')
+                return self.generate_what_if_scenarios(project_id, scenarios)
+            
+            elif action == 'optimize_genetic':
+                generations = kwargs.get('generations', 50)
+                population_size = kwargs.get('population_size', 20)
+                return self.optimize_schedule_genetic(project_id, generations, population_size)
+            
+            elif action == 'optimize_simulated_annealing':
+                iterations = kwargs.get('iterations', 1000)
+                return self.optimize_schedule_simulated_annealing(project_id, iterations)
             
             else:
                 return {
@@ -2142,7 +2765,9 @@ Return JSON:
                     'available_actions': [
                         'create_timeline', 'generate_gantt', 'track_milestones',
                         'check_deadlines', 'suggest_adjustments', 'identify_conflicts',
-                        'identify_dependencies', 'get_shared_view', 'calculate_duration', 'manage_phases'
+                        'identify_dependencies', 'get_shared_view', 'calculate_duration', 
+                        'manage_phases', 'optimize_schedule', 'coordinate_multi_project',
+                        'what_if_scenarios', 'optimize_genetic', 'optimize_simulated_annealing'
                     ]
                 }
         
