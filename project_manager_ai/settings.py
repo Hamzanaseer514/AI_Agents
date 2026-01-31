@@ -250,8 +250,8 @@ else:
     load_dotenv()
 
 SECRET_KEY = 'django-insecure-9hce6%w7!*)lb#$^6)gb8!h01#6t6y_85nn=exz82l4dj=6q45'
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+DEBUG = false
+ALLOWED_HOSTS = ['*', ".onrender.com"]
 
 
 # --------------------
