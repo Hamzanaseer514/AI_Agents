@@ -46,6 +46,8 @@ RUN python manage.py collectstatic --noinput
 
 # Expose port (use 10000 if that's what your earlier Gunicorn logs showed; or keep 8000)
 EXPOSE 10000
+CMD gunicorn project_manager_ai.wsgi:application \
+    --bind 0.0.0.0:$PORT \
+    --workers 2 \
+    --timeout 120
 
-# CMD – bind to $PORT if Render sets it, or hardcode. Add --workers etc.
-CMD ["gunicorn", "project_manager_ai.wsgi:application", "--bind", "0.0.0.0:10000", "--workers", "2", "--timeout", "120"]
