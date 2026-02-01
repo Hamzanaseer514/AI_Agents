@@ -250,7 +250,7 @@ else:
     load_dotenv()
 
 SECRET_KEY = 'django-insecure-9hce6%w7!*)lb#$^6)gb8!h01#6t6y_85nn=exz82l4dj=6q45'
-DEBUG = false
+DEBUG = False
 ALLOWED_HOSTS = ['*', ".onrender.com"]
 
 
@@ -264,8 +264,8 @@ def _startup_print(*args, **kwargs):
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-9hce6%w7!*)lb#$^6)gb8!h01#6t6y_85nn=exz82l4dj=6q45'
-DEBUG = True
+# SECRET_KEY = 'django-insecure-9hce6%w7!*)lb#$^6)gb8!h01#6t6y_85nn=exz82l4dj=6q45'
+# DEBUG = True
 # Allow ngrok domains and localhost for development
 ALLOWED_HOSTS = ['*']  # For development - allows all hosts including ngrok
 # For production, use specific domains:
