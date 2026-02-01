@@ -30,6 +30,11 @@ SQLAlchemy==2.0.46
 celery==5.3.4
 redis==5.0.1
 django-celery-beat==2.5.0
+spacy>=3.7.0,<3.8.0
+
 
 # Stripe payments
 stripe==8.0.0
+
+# Production server
+gunicorn==21.2.0
