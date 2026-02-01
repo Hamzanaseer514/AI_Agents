@@ -97,7 +97,7 @@
 # #         'HOST': os.getenv('DB_HOST', 'localhost'),
 # #         'PORT': os.getenv('DB_PORT', '1433'),
 # #         'OPTIONS': {
-# #             'driver': 'pymssql',
+# #             'driver': 'ODBC Driver 17 for SQL Server',
 # #             'extra_params': 'TrustServerCertificate=yes',  # Remove this in production with proper SSL
 # #         },
 # #     }
