@@ -373,7 +373,12 @@ USE_TZ = True
 # --------------------
 # Static files
 # --------------------
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
+# Where collectstatic will copy all static files
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# For development, your own static folder
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
 # --------------------
