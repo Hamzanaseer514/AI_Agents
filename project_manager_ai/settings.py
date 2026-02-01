@@ -342,12 +342,12 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'OPTIONS': {
-    'driver': 'ODBC Driver 18 for SQL Server',
-    'extra_params': 'Encrypt=yes;TrustServerCertificate=no;'
-},
-        'CONN_MAX_AGE': 0,
-        'TIME_ZONE': None,
+       'OPTIONS': {
+            'driver': 'ODBC Driver 17 for SQL Server',  # or '18' if you installed msodbcsql18
+            'extra_params': 'Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;',
+        },
+        # 'CONN_MAX_AGE': 0,
+        # 'TIME_ZONE': None,
     }
 }
 
